@@ -12,16 +12,14 @@ export const mastra = new Mastra({
   agents: { domainAgent },
   scorers: { toolCallAppropriatenessScorer, completenessScorer, translationScorer },
   storage: new LibSQLStore({
-    // stores observability, scores, ... into memory storage, if it needs to persist, change to file:../mastra.db
-    url: ":memory:",
+  url: ":memory:",
   }),
   logger: new PinoLogger({
     name: 'Mastra',
     level: 'info',
   }),
   telemetry: {
-    // Telemetry is deprecated and will be removed in the Nov 4th release
-    enabled: false, 
+  enabled: false, 
   },
   observability: {
     // Enables DefaultExporter and CloudExporter for AI tracing

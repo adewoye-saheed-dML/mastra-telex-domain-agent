@@ -1,35 +1,30 @@
-// src/agents/domain-agent.ts
 import { Agent } from "@mastra/core/agent";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: "./.env" });
 
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID ?? "";
-const TELEX_WEBHOOK_URL = process.env.TELEX_WEBHOOK_URL ?? ""; // <-- set this to your send endpoint
+const TELEX_WEBHOOK_URL = process.env.TELEX_WEBHOOK_URL ?? "";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const DOMAINSDB_API_KEY = process.env.DOMAINSDB_API_KEY ?? "";
 
 const TLD_LIST = [".dev", ".ai", ".app", ".io", ".xyz", ".tech", ".bot", ".new"];
 
-// -------------------------------
+
 // Create the Mastra agent
-// -------------------------------
+
 export const domainAgent = new Agent({
   id: "domain_agent",
   name: "Domain Checker",
   description: "Checks domain availability and posts a random TLD weekly.",
   instructions: "You are a concise assistant that checks domain availability and posts TLD-of-the-week.",
   model: {
-    id: "google/gemini-2.5-pro", // correct model id shape
+    id: "google/gemini-2.5-pro",
     apiKey: GEMINI_API_KEY || undefined,
   },
 });
 
-// -------------------------------
-// Helper: HTTP send to your webhook (Telex or other relay)
-// This removes any reliance on mastra.callAction/send APIs.
-// Expected body: { channel: string, text: string } - adapt server side if needed.
-// -------------------------------
+
 async function sendToChannel(channel: string, text: string) {
   if (!TELEX_WEBHOOK_URL) {
     // Fallback: if no webhook configured, log the message
@@ -57,9 +52,8 @@ async function sendToChannel(channel: string, text: string) {
   }
 }
 
-// -------------------------------
+
 // Domain availability function
-// -------------------------------
 async function checkDomainAvailability(domain: string): Promise<string> {
   // Add a check in case the key is missing from .env
   if (!DOMAINSDB_API_KEY) {
@@ -70,7 +64,7 @@ async function checkDomainAvailability(domain: string): Promise<string> {
   try {
     const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
 
-    // We now send our API key in the "headers"
+    // send API key in the "headers"
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -79,23 +73,23 @@ async function checkDomainAvailability(domain: string): Promise<string> {
     });
 
     if (response.status === 401) {
-      return "⚠️ Could not check the domain. The API key might be incorrect.";
+      return "Could not check the domain. The API key might be incorrect.";
     }
 
     if (!response.ok) {
       console.error(`DomainsDB API error: ${response.status} ${response.statusText}`);
-      return `⚠️ Could not check the domain right now (API error ${response.status}).`;
+      return `Could not check the domain right now (API error ${response.status}).`;
     }
 
     const data = (await response.json()) as { domains?: any[] };
     const isAvailable = !data.domains || data.domains.length === 0;
 
     return isAvailable
-      ? `✅ **Status for \`${domain}\`:** AVAILABLE!`
-      : `❌ **Status for \`${domain}\`:** TAKEN`;
+      ? `**Status for \`${domain}\`:** AVAILABLE!`
+      : `**Status for \`${domain}\`:** TAKEN`;
   } catch (err) {
     console.error("Error fetching domain info:", err);
-    return "⚠️ Sorry, I could not check that domain right now.";
+    return "Sorry, I could not check that domain right now.";
   }
 }
 
@@ -107,23 +101,20 @@ export async function handleDomainMessage(rawText: string): Promise<string> {
   const text = rawText?.trim() ?? "";
 
   if (!text.startsWith("/check ")) {
-    return "❌ Invalid command. Use `/check example.com`.";
+    return "Invalid command. Use `/check example.com`.";
   }
 
   const parts = text.split(/\s+/);
   const domain = parts[1];
   if (!domain) {
-    return "⚠️ Please provide a domain to check. Usage: `/check google.com`";
+    return "Please provide a domain to check. Usage: `/check google.com`";
   }
 
   return await checkDomainAvailability(domain);
 }
 
-// -------------------------------
 // Weekly TLD post function (proactive)
-// - Generates an optional LLM-polished message via domainAgent.generate([...])
-// - Sends to TELEX_WEBHOOK_URL (or logs if webhook not set)
-// -------------------------------
+
 async function postTldOfTheWeek() {
   if (!WEEKLY_CHANNEL_ID) {
     console.warn("WEEKLY_CHANNEL_ID not set. Skipping scheduled TLD post.");
@@ -138,7 +129,7 @@ async function postTldOfTheWeek() {
     // domainAgent.generate accepts string | string[] | MessageInput etc. string[] is safe.
     const genResult = await domainAgent.generate([baseMessage]);
 
-    // Extract text safely from genResult (best-effort; adapt if your runtime returns another shape)
+    // Extract text safely from genResult 
     let generatedText: string;
     if (typeof genResult === "string") {
       generatedText = genResult;
@@ -152,24 +143,20 @@ async function postTldOfTheWeek() {
       generatedText = baseMessage;
     }
 
-    // Send the final text to the channel via webhook (Telex or your relay)
     await sendToChannel(WEEKLY_CHANNEL_ID, generatedText);
 
-    console.log("✅ Successfully posted TLD of the Week.");
+    console.log("Successfully posted TLD of the Week.");
   } catch (error) {
-    console.error("❌ Failed to post TLD of the Week:", error);
+    console.error("Failed to post TLD of the Week:", error);
   }
 }
 
-// -------------------------------
+
 // Local quick test when run directly
-// -------------------------------
-// -------------------------------
-// Local quick test when run directly (ESM-safe)
-// -------------------------------
+
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
   (async () => {
-    console.log("🚀 Running local tests for domain agent...");
+    console.log("Running local tests for domain agent...");
 
     // You can test any domain name here — doesn't matter which
     const checkResponse = await handleDomainMessage("/check google.com");

@@ -18,5 +18,5 @@ app.post("/a2a/agent/domainAgent", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
-  console.log(`✅ Mastra A2A endpoint live at http://localhost:${PORT}/a2a/agent/domainAgent`)
+  console.log(`Mastra A2A endpoint live at http://localhost:${PORT}/a2a/agent/domainAgent`)
 );
