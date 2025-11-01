@@ -7,6 +7,7 @@ dotenv.config({ path: "./.env" });
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID ?? "";
 const TELEX_WEBHOOK_URL = process.env.TELEX_WEBHOOK_URL ?? ""; // <-- set this to your send endpoint
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
+const DOMAINSDB_API_KEY = process.env.DOMAINSDB_API_KEY ?? "";
 
 const TLD_LIST = [".dev", ".ai", ".app", ".io", ".xyz", ".tech", ".bot", ".new"];
 
@@ -60,11 +61,28 @@ async function sendToChannel(channel: string, text: string) {
 // Domain availability function
 // -------------------------------
 async function checkDomainAvailability(domain: string): Promise<string> {
-  try {
-    const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
-    const response = await fetch(url);
+  // Add a check in case the key is missing from .env
+  if (!DOMAINSDB_API_KEY) {
+    console.error("DOMAINSDB_API_KEY not set in .env file.");
+    return "⚠️ Sorry, the domain checker is not configured correctly (missing API key).";
+  }
 
-    if (!response.ok) {
+  try {
+    const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
+
+    // We now send our API key in the "headers"
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${DOMAINSDB_API_KEY}`,
+      },
+    });
+
+    if (response.status === 401) {
+      return "⚠️ Could not check the domain. The API key might be incorrect.";
+    }
+
+    if (!response.ok) {
       console.error(`DomainsDB API error: ${response.status} ${response.statusText}`);
       return `⚠️ Could not check the domain right now (API error ${response.status}).`;
     }
@@ -146,14 +164,17 @@ async function postTldOfTheWeek() {
 // -------------------------------
 // Local quick test when run directly
 // -------------------------------
-if (require.main === module) {
+// -------------------------------
+// Local quick test when run directly (ESM-safe)
+// -------------------------------
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
   (async () => {
     console.log("🚀 Running local tests for domain agent...");
 
-    const checkResponse = await handleDomainMessage("/check openai.com");
+    // You can test any domain name here — doesn't matter which
+    const checkResponse = await handleDomainMessage("/check google.com");
     console.log("Check response:", checkResponse);
 
-    // For a one-off test (don't schedule in serverless)
     await postTldOfTheWeek();
   })();
 }
