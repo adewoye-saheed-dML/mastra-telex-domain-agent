@@ -152,16 +152,16 @@ async function postTldOfTheWeek() {
 }
 
 
-// Local quick test when run directly
+// // Local quick test when run directly
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
-  (async () => {
-    console.log("Running local tests for domain agent...");
+// if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
+//   (async () => {
+//     console.log("Running local tests for domain agent...");
 
-    // You can test any domain name here — doesn't matter which
-    const checkResponse = await handleDomainMessage("/check google.com");
-    console.log("Check response:", checkResponse);
+//     // You can test any domain name here — doesn't matter which
+//     const checkResponse = await handleDomainMessage("/check google.com");
+//     console.log("Check response:", checkResponse);
 
-    await postTldOfTheWeek();
-  })();
-}
+//     await postTldOfTheWeek();
+//   })();
+// }
