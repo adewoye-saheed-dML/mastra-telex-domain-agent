@@ -1,7 +1,7 @@
 // server.ts
 import express from "express";
 import type { Request, Response } from "express";
-import { domainAgent, AGENT_ID } from "./domain-agent.ts";
+import { domainAgent, AGENT_ID, handleDomainMessage } from "./domain-agent.ts"; // ✅ added handleDomainMessage
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: "./.env" });
@@ -123,7 +123,7 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
     // Run in background and POST final result to push_url
     (async () => {
       try {
-        const rawReply = await domainAgent.generate([String(input)]);
+        const rawReply = await handleDomainMessage(String(input)); // ✅ changed this
         const replyText = normalizeAgentReply(rawReply) || "No reply from agent.";
         const resultPayload = buildResultPayload(id, replyText);
         await postToPushUrl(pushUrl, resultPayload);
@@ -139,7 +139,7 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
   // Synchronous flow
   try {
-    const rawReply = await domainAgent.generate([String(input)]);
+    const rawReply = await handleDomainMessage(String(input)); // ✅ changed this
     const replyText = normalizeAgentReply(rawReply) || "No reply from agent.";
 
     if (id) res.json(buildResultPayload(id, replyText));
