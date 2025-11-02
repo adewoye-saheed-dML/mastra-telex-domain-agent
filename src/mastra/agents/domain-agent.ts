@@ -50,41 +50,22 @@ async function sendToChannel(channel: string, text: string) {
   }
 }
 
-// Domain availability function
+// ✅ Updated domain availability function
 export async function checkDomainAvailability(domain: string): Promise<string> {
-  if (!DOMAINSDB_API_KEY) {
-    console.error("DOMAINSDB_API_KEY not set in .env file.");
-    return "⚠️ Sorry, the domain checker is not configured correctly (missing API key).";
-  }
-
   try {
-    const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
+    // Use Google DNS resolver to check if domain exists
+    const dnsRes = await fetch(`https://dns.google/resolve?name=${domain}`);
+    const dnsData = await dnsRes.json();
+    const hasRecords = dnsData.Answer && dnsData.Answer.length > 0;
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${DOMAINSDB_API_KEY}`,
-      },
-    });
-
-    if (response.status === 401) {
-      return "Could not check the domain. The API key might be incorrect.";
+    if (hasRecords) {
+      return `**Status for \`${domain}\`:** TAKEN`;
+    } else {
+      return `**Status for \`${domain}\`:** AVAILABLE!`;
     }
-
-    if (!response.ok) {
-      console.error(`DomainsDB API error: ${response.status} ${response.statusText}`);
-      return `Could not check the domain right now (API error ${response.status}).`;
-    }
-
-    const data = (await response.json()) as { domains?: any[] };
-    const isAvailable = !data.domains || data.domains.length === 0;
-
-    return isAvailable
-      ? `**Status for \`${domain}\`:** AVAILABLE!`
-      : `**Status for \`${domain}\`:** TAKEN`;
   } catch (err) {
-    console.error("Error fetching domain info:", err);
-    return "Sorry, I could not check that domain right now.";
+    console.error("Error checking domain:", err);
+    return "Sorry, I couldn’t check that domain right now.";
   }
 }
 
