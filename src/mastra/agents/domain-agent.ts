@@ -122,7 +122,7 @@ async function postTldOfTheWeek() {
   }
 
   const tld = TLD_LIST[Math.floor(Math.random() * TLD_LIST.length)];
-  const baseMessage = `✨ TLD of the Week: ${tld}\nPerfect for your next side project!`;
+  const baseMessage = `TLD of the Week: ${tld}\nPerfect for your next side project!`;
 
   try {
     // Generate (LLM) text if you want to transform / style the message first.
