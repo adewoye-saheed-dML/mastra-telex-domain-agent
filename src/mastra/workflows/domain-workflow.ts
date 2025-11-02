@@ -1,9 +1,9 @@
 // workflows/domain-workflow.ts
 import { Workflow } from "@mastra/core";
 import { z } from "zod";
-import { AGENT_ID } from "../agents/domain-agent"; // keep this
+import { AGENT_ID } from "../agents/domain-agent"; 
 
-export const WORKFLOW_ID = "hng-domain-agent-001"; // explicit exported id
+export const WORKFLOW_ID = "hng-domain-agent-001"; 
 
 const inputSchema = z.object({
   text: z.string(),

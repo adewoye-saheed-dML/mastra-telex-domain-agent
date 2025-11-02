@@ -1,6 +1,7 @@
 // server.ts
-import express, { Request, Response } from "express";
-import { domainAgent, AGENT_ID } from "./domain-agent.js";
+import express from "express";
+import type { Request, Response } from "express";
+import { domainAgent, AGENT_ID } from "./domain-agent.ts";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: "./.env" });
