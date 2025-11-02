@@ -10,7 +10,6 @@ export const AGENT_ID = "domainAgent";
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID ?? "";
 const TELEX_WEBHOOK_URL = process.env.TELEX_WEBHOOK_URL ?? "";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
-const DOMAINSDB_API_KEY = process.env.DOMAINSDB_API_KEY ?? "";
 
 const TLD_LIST = [".dev", ".ai", ".app", ".io", ".xyz", ".tech", ".bot", ".new"];
 
@@ -19,7 +18,8 @@ export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
   description: "Checks domain availability and posts a random TLD weekly.",
-  instructions: "You are a concise assistant that checks domain availability and posts TLD-of-the-week.",
+  instructions:
+    "You are a concise assistant that checks domain availability and posts TLD-of-the-week.",
   model: {
     id: "google/gemini-2.5-pro",
     apiKey: GEMINI_API_KEY || undefined,
@@ -36,13 +36,18 @@ async function sendToChannel(channel: string, text: string) {
     const res = await fetch(TELEX_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel, text }),
+      // Telex expects a simple payload with only { text }
+      body: JSON.stringify({ text }),
     });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(`[sendToChannel] webhook responded ${res.status} ${res.statusText} - ${body}`);
+      console.error(
+        `[sendToChannel] webhook responded ${res.status} ${res.statusText} - ${body}`
+      );
       throw new Error(`Webhook error: ${res.status}`);
+    } else {
+      console.log(`[sendToChannel] Message sent to Telex: ${text}`);
     }
   } catch (err) {
     console.error("[sendToChannel] failed to POST to webhook:", err);
@@ -50,7 +55,7 @@ async function sendToChannel(channel: string, text: string) {
   }
 }
 
-// ✅ Updated domain availability function
+// domain availability function
 export async function checkDomainAvailability(domain: string): Promise<string> {
   try {
     // Use Google DNS resolver to check if domain exists
@@ -83,7 +88,10 @@ export async function handleDomainMessage(rawText: string): Promise<string> {
     return "Please provide a domain to check. Usage: `/check google.com`";
   }
 
-  return await checkDomainAvailability(domain);
+  const result = await checkDomainAvailability(domain);
+  // Also send result back to Telex webhook
+  await sendToChannel("telex", result);
+  return result;
 }
 
 // Weekly TLD post function (proactive)
