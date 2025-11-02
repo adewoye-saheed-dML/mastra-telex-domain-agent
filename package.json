@@ -1,18 +1,25 @@
 {
   "name": "domain-agent",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Mastra domain availability checker agent",
+  "main": "dist/agents/server.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "mastra dev",
-    "build": "mastra build",
-    "start": "mastra start"
+    "dev": "ts-node-esm src/mastra/agents/server.ts",
+    "build": "tsc",
+    "start": "node dist/agents/server.js",
+    "mastra:dev": "mastra dev",
+    "mastra:build": "mastra build",
+    "mastra:start": "mastra start"
   },
-  "keywords": [],
+  "keywords": [
+    "mastra",
+    "agent",
+    "domain-checker",
+    "a2a"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "engines": {
     "node": ">=20.9.0"
   },
@@ -22,11 +29,15 @@
     "@mastra/libsql": "^0.16.1",
     "@mastra/loggers": "^0.10.18",
     "@mastra/memory": "^0.15.10",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^24.9.2",
     "mastra": "^0.17.7",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
 }

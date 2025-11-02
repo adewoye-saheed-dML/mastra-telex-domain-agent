@@ -1,35 +1,31 @@
+// workflows/domain-workflow.ts
+import { Workflow } from "@mastra/core";
+import { z } from "zod";
+import { AGENT_ID } from "../agents/domain-agent"; // keep this
 
-import { Workflow } from '@mastra/core';
-import { z } from 'zod'; 
-
+export const WORKFLOW_ID = "hng-domain-agent-001"; // explicit exported id
 
 const inputSchema = z.object({
-  // This rule says the input must be an object
-  // with a "text" property that is a string.
-  // Example: { "text": "/check google.com" }
   text: z.string(),
 });
 
 const outputSchema = z.object({
-  // This rule says the output will be an object
-  // with a "reply" property that is a string.
-  // Example: { "reply": "Status for `google.com`: AVAILABLE!" }
   reply: z.string(),
 });
 
+const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "https://purring-loud-processor.mastra.cloud";
+const agentInvokeUrl = `${A2A_BASE.replace(/\/$/, "")}/a2a/agent/${AGENT_ID}`;
 
 const domainWorkflowConfig = {
   active: true,
   category: "utilities",
   description: "Checks domain availability and posts a TLD of the Week.",
-  id: "hng-domain-agent-001",
-  long_description:
-    "An agent that allows users to instantly check domain name availability...",
+  id: WORKFLOW_ID,
+  long_description: "An agent that allows users to instantly check domain name availability...",
   name: "Domain & TLD Agent",
 
-
-  inputSchema: inputSchema,
-  outputSchema: outputSchema,
+  inputSchema,
+  outputSchema,
 
   nodes: [
     {
@@ -39,7 +35,7 @@ const domainWorkflowConfig = {
       position: [800, -100],
       type: "a2a/mastra-a2a-node",
       typeVersion: 1,
-      url:"https://purring-loud-processor.mastra.cloud/a2a/agent/domainAgent",
+      url: agentInvokeUrl,
     },
   ],
   pinData: {},
@@ -49,5 +45,5 @@ const domainWorkflowConfig = {
   short_description: "Check domain availability.",
 };
 
-
+// Export the workflow (named export)
 export const domainWorkflow = new Workflow(domainWorkflowConfig);

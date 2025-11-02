@@ -1,7 +1,11 @@
+// agents/domain-agent.ts
 import { Agent } from "@mastra/core/agent";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: "./.env" });
+
+// exported ID to be reused in server/workflow/config
+export const AGENT_ID = "domainAgent";
 
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID ?? "";
 const TELEX_WEBHOOK_URL = process.env.TELEX_WEBHOOK_URL ?? "";
@@ -10,11 +14,9 @@ const DOMAINSDB_API_KEY = process.env.DOMAINSDB_API_KEY ?? "";
 
 const TLD_LIST = [".dev", ".ai", ".app", ".io", ".xyz", ".tech", ".bot", ".new"];
 
-
 // Create the Mastra agent
-
 export const domainAgent = new Agent({
-  id: "domainAgent",
+  id: AGENT_ID,
   name: "Domain Checker",
   description: "Checks domain availability and posts a random TLD weekly.",
   instructions: "You are a concise assistant that checks domain availability and posts TLD-of-the-week.",
@@ -24,10 +26,8 @@ export const domainAgent = new Agent({
   },
 });
 
-
 async function sendToChannel(channel: string, text: string) {
   if (!TELEX_WEBHOOK_URL) {
-    // Fallback: if no webhook configured, log the message
     console.log(`[sendToChannel] (no webhook) channel=${channel} text=${text}`);
     return;
   }
@@ -41,9 +41,7 @@ async function sendToChannel(channel: string, text: string) {
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(
-        `[sendToChannel] webhook responded ${res.status} ${res.statusText} - ${body}`
-      );
+      console.error(`[sendToChannel] webhook responded ${res.status} ${res.statusText} - ${body}`);
       throw new Error(`Webhook error: ${res.status}`);
     }
   } catch (err) {
@@ -52,31 +50,28 @@ async function sendToChannel(channel: string, text: string) {
   }
 }
 
-
 // Domain availability function
-async function checkDomainAvailability(domain: string): Promise<string> {
-  // Add a check in case the key is missing from .env
+export async function checkDomainAvailability(domain: string): Promise<string> {
   if (!DOMAINSDB_API_KEY) {
     console.error("DOMAINSDB_API_KEY not set in .env file.");
     return "⚠️ Sorry, the domain checker is not configured correctly (missing API key).";
   }
 
-  try {
-    const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
+  try {
+    const url = `https://api.domainsdb.info/v1/domains/search?domain=${encodeURIComponent(domain)}`;
 
-    // send API key in the "headers"
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${DOMAINSDB_API_KEY}`,
-      },
-    });
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${DOMAINSDB_API_KEY}`,
+      },
+    });
 
-    if (response.status === 401) {
-      return "Could not check the domain. The API key might be incorrect.";
-    }
+    if (response.status === 401) {
+      return "Could not check the domain. The API key might be incorrect.";
+    }
 
-    if (!response.ok) {
+    if (!response.ok) {
       console.error(`DomainsDB API error: ${response.status} ${response.statusText}`);
       return `Could not check the domain right now (API error ${response.status}).`;
     }
@@ -93,10 +88,7 @@ async function checkDomainAvailability(domain: string): Promise<string> {
   }
 }
 
-// -------------------------------
 // Handler for incoming "/check" style messages
-// Returns a string that the caller (Telex webhook, HTTP endpoint, or Mastra workflow) can send.
-// -------------------------------
 export async function handleDomainMessage(rawText: string): Promise<string> {
   const text = rawText?.trim() ?? "";
 
@@ -114,8 +106,7 @@ export async function handleDomainMessage(rawText: string): Promise<string> {
 }
 
 // Weekly TLD post function (proactive)
-
-async function postTldOfTheWeek() {
+export async function postTldOfTheWeek() {
   if (!WEEKLY_CHANNEL_ID) {
     console.warn("WEEKLY_CHANNEL_ID not set. Skipping scheduled TLD post.");
     return;
@@ -125,11 +116,8 @@ async function postTldOfTheWeek() {
   const baseMessage = `TLD of the Week: ${tld}\nPerfect for your next side project!`;
 
   try {
-    // Generate (LLM) text if you want to transform / style the message first.
-    // domainAgent.generate accepts string | string[] | MessageInput etc. string[] is safe.
     const genResult = await domainAgent.generate([baseMessage]);
 
-    // Extract text safely from genResult 
     let generatedText: string;
     if (typeof genResult === "string") {
       generatedText = genResult;
@@ -150,18 +138,3 @@ async function postTldOfTheWeek() {
     console.error("Failed to post TLD of the Week:", error);
   }
 }
-
-
-// // Local quick test when run directly
-
-// if (process.argv[1] && import.meta.url.endsWith(process.argv[1])) {
-//   (async () => {
-//     console.log("Running local tests for domain agent...");
-
-//     // You can test any domain name here — doesn't matter which
-//     const checkResponse = await handleDomainMessage("/check google.com");
-//     console.log("Check response:", checkResponse);
-
-//     await postTldOfTheWeek();
-//   })();
-// }

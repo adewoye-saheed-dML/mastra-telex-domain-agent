@@ -1,27 +1,29 @@
-import { Mastra } from '@mastra/core/mastra';
-import { PinoLogger } from '@mastra/loggers';
-import { LibSQLStore } from '@mastra/libsql';
+// index.ts
+import { Mastra } from "@mastra/core/mastra";
+import { PinoLogger } from "@mastra/loggers";
+import { LibSQLStore } from "@mastra/libsql";
 
+import { domainWorkflow, WORKFLOW_ID } from "./workflows/domain-workflow";
+import { domainAgent, AGENT_ID } from "./agents/domain-agent";
 
-import { domainWorkflow } from './workflows/domain-workflow';
-import { domainAgent } from './agents/domain-agent';
-
+const libsqlUrl = process.env.LIBSQL_URL ?? ":memory:";
+const logLevel = (process.env.LOG_LEVEL || "info") as any;
 
 export const mastra = new Mastra({
-  workflows: {domainWorkflow},
-  agents: { domainAgent },
+  workflows: { [WORKFLOW_ID]: domainWorkflow },
+  agents: { [AGENT_ID]: domainAgent },
   storage: new LibSQLStore({
-  url: ":memory:",
+    url: libsqlUrl,
   }),
   logger: new PinoLogger({
-    name: 'Mastra',
-    level: 'info',
+    name: "Mastra",
+    level: logLevel,
   }),
   telemetry: {
-  enabled: false, 
+    enabled: process.env.MASTRA_TELEMETRY_ENABLED === "true",
   },
   observability: {
     // Enables DefaultExporter and CloudExporter for AI tracing
-    default: { enabled: true }, 
+    default: { enabled: true },
   },
 });
