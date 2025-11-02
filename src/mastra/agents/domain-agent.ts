@@ -14,7 +14,7 @@ const TLD_LIST = [".dev", ".ai", ".app", ".io", ".xyz", ".tech", ".bot", ".new"]
 // Create the Mastra agent
 
 export const domainAgent = new Agent({
-  id: "domain_agent",
+  id: "domainAgent",
   name: "Domain Checker",
   description: "Checks domain availability and posts a random TLD weekly.",
   instructions: "You are a concise assistant that checks domain availability and posts TLD-of-the-week.",
