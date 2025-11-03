@@ -1,4 +1,4 @@
-// src/mastra/agents/domain-agent.ts
+
 import { Agent } from "@mastra/core/agent";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
@@ -16,7 +16,7 @@ const WHOIS_API_KEY = WHOISFREAKS_API_KEY;
 const WHOISFREAKS_API_BASE = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
 
 if (!WHOISFREAKS_API_KEY) {
-  console.warn("⚠️ WHOISFREAKS_API_KEY not set. Add it to .env (WHOISFREAKS_API_KEY=...)");
+  console.warn("WHOISFREAKS_API_KEY not set. Add it to .env (WHOISFREAKS_API_KEY=...)");
 }
 
 // Zod schema for the tool input
@@ -33,7 +33,7 @@ const whoisTool = {
     // (omitted here for brevity in this snippet — assume this is your working version from earlier)
     // ... existing execute implementation (unchanged)
     // NOTE: in your file keep the full execute logic you had that extracts domain and calls WHOISFREAKS_API.
-    return `⚠️ placeholder - keep your real execute implementation here`;
+    return `placeholder - keep your real execute implementation here`;
   },
 };
 

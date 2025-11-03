@@ -1,9 +1,9 @@
-// index.ts
+
 import { Mastra } from "@mastra/core/mastra";
 import { PinoLogger } from "@mastra/loggers";
 import { LibSQLStore } from "@mastra/libsql";
 
-// ⬇️ THIS IS THE FIX ⬇️
+
 import { domainWorkflow, WORKFLOW_ID } from "./workflows/domain-workflow.js";
 // ⬇️ AND THIS IS THE FIX ⬇️
 import { domainAgent, AGENT_ID } from "./agents/domain-agent.js";

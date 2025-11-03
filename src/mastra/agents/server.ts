@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 import dotenv from "dotenv";
 dotenv.config({ path: "./.env" });
 
-// ✅ Import domain agent and utilities
+// Import domain agent and utilities
 import { handleDomainMessage, AGENT_ID } from "./domain-agent.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -14,7 +14,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 // ----------------------
-// 🧩 Agent Discovery Endpoint
+// Agent Discovery Endpoint
 // ----------------------
 app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Response) => {
   const invokeUrl = `${A2A_BASE}/a2a/agent/${AGENT_ID}`;
@@ -30,7 +30,7 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
 });
 
 // ----------------------
-// 🔍 Helper: Extract text input
+// Helper: Extract text input
 // ----------------------
 function extractInputText(reqBody: any): string {
   const pm = reqBody?.params?.message ?? reqBody?.params?.message;
@@ -53,7 +53,7 @@ function extractInputText(reqBody: any): string {
 }
 
 // ----------------------
-// 🧾 Helper: Build JSON-RPC Response
+// Helper: Build JSON-RPC Response
 // ----------------------
 function buildResultPayload(idValue: any, text: string) {
   return {
@@ -70,7 +70,7 @@ function buildResultPayload(idValue: any, text: string) {
 }
 
 // ----------------------
-// 📡 Helper: Post back to push_url
+//  Helper: Post back to push_url
 // ----------------------
 async function postToPushUrl(pushUrl: string, payload: any, token?: string | null) {
   try {
@@ -91,7 +91,7 @@ async function postToPushUrl(pushUrl: string, payload: any, token?: string | nul
 }
 
 // ----------------------
-// 🧠 Main Agent Endpoint
+//  Main Agent Endpoint
 // ----------------------
 app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   console.log("[A2A] headers:", JSON.stringify(req.headers, null, 2));
@@ -152,7 +152,7 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 });
 
 // ----------------------
-// 🚀 Start Server
+//  Start Server
 // ----------------------
 app.listen(PORT, () => {
   console.log(`Mastra A2A invoke URL: ${A2A_BASE}/a2a/agent/${AGENT_ID}`);
