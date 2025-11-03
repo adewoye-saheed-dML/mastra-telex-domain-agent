@@ -14,7 +14,7 @@ const outputSchema = z.object({
   reply: z.string(),
 });
 
-const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "";
+const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "https://mastra-telex-domain-agent-production.up.railway.app/a2a/agent/domain-checker-agent";
 const agentInvokeUrl = `${A2A_BASE.replace(/\/$/, "")}/a2a/agent/${AGENT_ID}`;
 
 const domainWorkflowConfig = {
