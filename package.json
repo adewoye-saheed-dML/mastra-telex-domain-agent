@@ -31,11 +31,13 @@
     "@mastra/memory": "^0.15.10",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "loader": "^2.1.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^24.9.2",
+    "@types/node-fetch": "^2.6.13",
     "mastra": "^0.17.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

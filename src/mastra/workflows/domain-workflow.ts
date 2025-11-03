@@ -1,9 +1,10 @@
 // workflows/domain-workflow.ts
 import { Workflow } from "@mastra/core";
 import { z } from "zod";
-import { AGENT_ID } from "../agents/domain-agent"; 
+// ⬇️ THIS IS THE FIX ⬇️
+import { AGENT_ID } from "../agents/domain-agent.js"; 
 
-export const WORKFLOW_ID = "hng-domain-agent-001"; 
+export const WORKFLOW_ID = "hng-domain-agent-001";
 
 const inputSchema = z.object({
   text: z.string(),

@@ -3,8 +3,10 @@ import { Mastra } from "@mastra/core/mastra";
 import { PinoLogger } from "@mastra/loggers";
 import { LibSQLStore } from "@mastra/libsql";
 
-import { domainWorkflow, WORKFLOW_ID } from "./workflows/domain-workflow";
-import { domainAgent, AGENT_ID } from "./agents/domain-agent";
+// ⬇️ THIS IS THE FIX ⬇️
+import { domainWorkflow, WORKFLOW_ID } from "./workflows/domain-workflow.js";
+// ⬇️ AND THIS IS THE FIX ⬇️
+import { domainAgent, AGENT_ID } from "./agents/domain-agent.js";
 
 const libsqlUrl = process.env.LIBSQL_URL ?? ":memory:";
 const logLevel = (process.env.LOG_LEVEL || "info") as any;
