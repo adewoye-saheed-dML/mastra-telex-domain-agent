@@ -99,8 +99,11 @@ curl -X POST http://localhost:3000/a2a/agent/domain-checker-agent \
 
 #### Example Success Response
 
-``   {    "jsonrpc": "2.0",    "id": "1",    "result": {      "ok": true,      
-"output": {        "text": "✅ Status for `insightsdataacademy.com`: REGISTERED\nRegistrar: NAMECHEAP INC\nCreated: 2023-11-15\nExpiry: 2024-11-15",        "artifacts": [          {            "type": "text/plain",            "parts": [              {                "text": "✅ Status for `insightsdataacademy.com`: REGISTERED\nRegistrar: NAMECHEAP INC\nCreated: 2023-11-15\nExpiry: 2024-11-15"              }            ]          }        ]      }    }  }   ``
+``
+{    "jsonrpc": "2.0",    "id": "1",    "result": {      "ok": true,      
+"output": {        "text": "✅ Status for `insightsdataacademy.com`: REGISTERED\nRegistrar: NAMECHEAP INC\nCreated: 2023-11-15\nExpiry: 2024-11-15",        "artifacts": [          {            "type": "text/plain",            "parts": [              {                "text": "✅ Status for `insightsdataacademy.com`: REGISTERED\nRegistrar: NAMECHEAP INC\nCreated: 2023-11-15\nExpiry: 2024-11-15"              }            ]          }        ]      }    }  }   
+
+```
 
 Troubleshooting
 ---------------
