@@ -14,8 +14,30 @@ const outputSchema = z.object({
   reply: z.string(),
 });
 
-const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "https://mastra-telex-domain-agent-production.up.railway.app/";
-const agentInvokeUrl = `${A2A_BASE.replace(/\/$/, "")}/a2a/agent/${AGENT_ID}`;
+// const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "https://mastra-telex-domain-agent-production.up.railway.app/";
+// const agentInvokeUrl = `${A2A_BASE.replace(/\/$/, "")}/a2a/agent/${AGENT_ID}`;
+
+
+// --- SAFER BASE URL & AGENT CONFIG ---
+let A2A_BASE = process.env.MASTRA_A2A_BASE_URL?.trim() ||
+  "https://mastra-telex-domain-agent-production.up.railway.app";
+
+// Clean trailing slash
+A2A_BASE = A2A_BASE.replace(/\/$/, "");
+
+// Ensure agent ID exists
+const agentId = AGENT_ID?.trim() || "domain-checker-agent";
+
+// Construct full agent invoke URL
+const agentInvokeUrl = `${A2A_BASE}/a2a/agent/${agentId}`;
+
+// Validate config to catch misconfiguration early
+if (!A2A_BASE.startsWith("http")) {
+  throw new Error(`Invalid MASTRA_A2A_BASE_URL: ${A2A_BASE}`);
+}
+if (!agentId) {
+  throw new Error("Missing AGENT_ID (check your domain-agent.js or .env file)");
+}
 
 const domainWorkflowConfig = {
   active: true,
