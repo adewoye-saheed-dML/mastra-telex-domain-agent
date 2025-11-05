@@ -44,7 +44,14 @@ const domainWorkflowConfig = {
   category: "utilities",
   description: "Checks domain availability and posts a TLD of the Week.",
   id: WORKFLOW_ID,
-  long_description: "An agent that allows users to instantly check domain name availability...",
+  long_description: `
+      You are a helpful Domain Assistant. Your job is to check the availability of domain names for a user.
+
+      When a user asks to check a domain (e.g., "is example.com available?"), you MUST use the **domainCheckerTool** to find the answer.
+      
+      - Always ask for a domain name if one is not provided.
+      - Clearly state the answer you get from the tool.
+  `,
   name: "Domain & TLD Agent",
 
   inputSchema,
@@ -52,7 +59,7 @@ const domainWorkflowConfig = {
 
   nodes: [
     {
-      id: "domain_agent_node",
+      id: "domainCheckerTool",
       name: "Domain Agent Node",
       parameters: {},
       position: [800, -100],
