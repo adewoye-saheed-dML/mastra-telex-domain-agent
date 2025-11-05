@@ -14,22 +14,16 @@ const outputSchema = z.object({
   reply: z.string(),
 });
 
-// const A2A_BASE = process.env.MASTRA_A2A_BASE_URL ?? "https://mastra-telex-domain-agent-production.up.railway.app/";
-// const agentInvokeUrl = `${A2A_BASE.replace(/\/$/, "")}/a2a/agent/${AGENT_ID}`;
 
-
-// --- SAFER BASE URL & AGENT CONFIG ---
+// ---BASE URL & AGENT CONFIG ---
 let A2A_BASE = process.env.MASTRA_A2A_BASE_URL?.trim() ||
   "https://mastra-telex-domain-agent-production.up.railway.app";
 
-// Clean trailing slash
+
 A2A_BASE = A2A_BASE.replace(/\/$/, "");
-
-// Ensure agent ID exists
 const agentId = AGENT_ID?.trim() || "domain-checker-agent";
-
-// Construct full agent invoke URL
 const agentInvokeUrl = `${A2A_BASE}/a2a/agent/${agentId}`;
+
 
 // Validate config to catch misconfiguration early
 if (!A2A_BASE.startsWith("http")) {
@@ -59,7 +53,7 @@ const domainWorkflowConfig = {
 
   nodes: [
     {
-      id: "domainCheckerTool",
+      id: "domain_agent_node",
       name: "Domain Agent Node",
       parameters: {},
       position: [800, -100],
