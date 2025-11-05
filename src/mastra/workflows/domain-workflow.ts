@@ -55,7 +55,7 @@ const domainWorkflowConfig = {
 
   nodes: [
     {
-      id: "domain_agent_node",
+      id: "domain-checker-agent",
       name: "Domain Agent Node",
       parameters: {},
       position: [800, -100],
