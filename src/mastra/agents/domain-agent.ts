@@ -7,18 +7,17 @@ dotenv.config({ path: "./.env" });
 
 export const AGENT_ID = "domain-checker-agent";
 
+// --- API and Tool configuration (Unchanged) ---
 const WHOISFREAKS_API_KEY = process.env.WHOISFREAKS_API_KEY ?? "";
 const WHOIS_API_KEY = WHOISFREAKS_API_KEY;
 const WHOISFREAKS_API_BASE = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
 
 if (!WHOISFREAKS_API_KEY) console.warn("WHOISFREAKS_API_KEY not set. Add it to .env");
 
-// Tool schema
 const DomainSchema = z.object({
   domain: z.string().min(3, "Please provide a valid domain name."),
 });
 
-// Whois tool
 const whoisTool = {
   name: "check_domain_status",
   description: "Checks if a domain is registered using the WhoisFreaks API.",
@@ -79,7 +78,6 @@ const whoisTool = {
   },
 };
 
-// Create the Mastra Agent
 export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
@@ -89,7 +87,6 @@ export const domainAgent = new Agent({
   tools: { [whoisTool.name]: whoisTool },
 });
 
-// Detect if an object looks like a JSON-RPC/Mastra result already
 function looksLikeResultEnvelope(obj: any) {
   if (!obj || typeof obj !== "object") return false;
   if (obj.jsonrpc === "2.0" && ("result" in obj || "error" in obj)) return true;
@@ -98,22 +95,52 @@ function looksLikeResultEnvelope(obj: any) {
   return false;
 }
 
+// --- End of Unchanged Code ---
+
 /**
- * handleDomainMessage (Option A)
- * - Accepts a plain string (userText)
- * - Constructs a Mastra-compatible messages array:
- * [ { role: "user", parts: [{ text: userText }] } ]
- * - Calls the agent with that array (no nested `{ message: ... }`)
- * - Returns either a JSON-RPC friendly object { result: { ok: true, output: {...} } } or { error: {...} }
+ * ✅ NEW: Helper function to extract the *actual* query text
+ * from the complex message object seen in the logs.
  */
-// ✅ FIX: Change signature to accept the full message object, not just a string.
+function extractTextFromMessage(message: any): string {
+  if (!message || !message.parts || !Array.isArray(message.parts)) {
+    return "";
+  }
+  // Find the first 'text' part and return its content.
+  // This ignores the confusing 'data' part.
+  for (const part of message.parts) {
+    if ((part.kind === 'text' || part.type === 'text') && typeof part.text === 'string') {
+      return part.text.trim();
+    }
+  }
+  return ""; // No text part found
+}
+
+/**
+ * handleDomainMessage (Corrected)
+ * - Accepts the full, complex message object from server.ts
+ * - Uses `extractTextFromMessage` to find the *real* user query
+ * - Builds a *new, clean* message list for the agent
+ * - Calls the agent with the clean message
+ */
 export async function handleDomainMessage(message: any): Promise<any> {
   try {
-    // ✅ FIX: Pass the original message from the platform directly to the agent.
-    // The 'generate' method expects an *array* of message objects.
-    const messages = [message];
+    // ✅ FIX: Extract the actual user text from the complex message object
+    const userText = extractTextFromMessage(message);
 
-    // Call the agent with the full, original message list
+    if (!userText) {
+      throw new Error("Could not extract user text from the message parts.");
+    }
+
+    // ✅ FIX: Build a *clean* message list for the agent,
+    // just like we did in the original version.
+    const messages = [
+      {
+        role: "user",
+        parts: [{ text: userText }],
+      },
+    ];
+
+    // Call the agent with the CLEAN message list
     const agentResult = await (domainAgent as any).generate(messages);
 
     // If the agent already returned a proper envelope, pass through
@@ -140,11 +167,10 @@ export async function handleDomainMessage(message: any): Promise<any> {
     // last resort
     return { result: { ok: true, output: { text: JSON.stringify(agentResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult }] }] } } };
   } catch (err: any) {
-    console.error("❌ 'handleDomainMessage' failed:", err); // Added better logging
+    console.error("❌ 'handleDomainMessage' failed:", err);
     return {
       error: {
         code: -32000,
-        // ✅ FIX: Pass the actual error message
         message: String(err?.message ?? err),
         data: { where: "handleDomainMessage" },
       },
