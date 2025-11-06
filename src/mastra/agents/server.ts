@@ -5,7 +5,6 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 dotenv.config({ path: "./.env" });
 
-// Import domain agent and utilities
 import { handleDomainMessage, AGENT_ID } from "./domain-agent.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -14,7 +13,7 @@ const A2A_BASE = (process.env.MASTRA_A2A_BASE_URL || `http://localhost:${PORT}`)
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-// ------------- Discovery ----------------
+// Discovery
 app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Response) => {
   const invokeUrl = `${A2A_BASE}/a2a/agent/${AGENT_ID}`;
   res.json({
@@ -28,18 +27,29 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
   });
 });
 
-// ------------- Helpers ----------------
-function extractInputMessage(reqBody: any) {
-  // Prefer params.message (Telex / Mastra)
-  if (reqBody?.params?.message) return reqBody.params.message;
-  // If direct 'message' present
-  if (reqBody?.message) return reqBody.message;
-  // If a plain string input
-  if (typeof reqBody?.input === "string") return { role: "user", parts: [{ kind: "text", text: reqBody.input }] };
-  if (typeof reqBody?.text === "string") return { role: "user", parts: [{ kind: "text", text: reqBody.text }] };
+// Helper: extract plain user text ONLY (Option A)
+function extractUserText(reqBody: any): string {
+  // Typical Telex/Mastra shape: params.message.parts => pick first text part that looks like user text
+  const msg = reqBody?.params?.message ?? reqBody?.message ?? null;
 
-  // fallback to full params or the body
-  return reqBody?.params ?? reqBody;
+  if (msg && Array.isArray(msg.parts)) {
+    // scan for first parts[].text string
+    for (const p of msg.parts) {
+      if (!p) continue;
+      if (typeof p.text === "string" && p.text.trim()) return p.text.trim();
+      // sometimes nested as p.payload or p.body
+      if (typeof p.payload === "string" && p.payload.trim()) return p.payload.trim();
+      if (typeof p.body === "string" && p.body.trim()) return p.body.trim();
+    }
+  }
+
+  // fallback shapes
+  if (typeof reqBody?.input === "string" && reqBody.input.trim()) return reqBody.input.trim();
+  if (typeof reqBody?.params?.input === "string" && reqBody.params.input.trim()) return reqBody.params.input.trim();
+  if (typeof reqBody?.text === "string" && reqBody.text.trim()) return reqBody.text.trim();
+
+  // last resort: return empty string (agent will handle asking for domain)
+  return "";
 }
 
 function buildJsonRpcResult(idValue: any, resultObj: any) {
@@ -78,7 +88,7 @@ async function postToPushUrl(pushUrl: string, payload: any, token?: string | nul
   }
 }
 
-// ------------- Main A2A Endpoint ----------------
+// Main A2A endpoint (sync + async/push_url)
 app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   console.log("[A2A] headers:", JSON.stringify(req.headers, null, 2));
   console.log("[A2A] body:", JSON.stringify(req.body, null, 2));
@@ -86,67 +96,58 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   const jsonrpcVersion = req.body?.jsonrpc ?? "2.0";
   const id = req.body?.id ?? null;
 
-  // extract message payload, but keep the whole params available for agent
-  const message = extractInputMessage(req.body);
-  const params = req.body?.params ?? {};
+  // --- Option A: normalize to a single text string ---
+  const userText = extractUserText(req.body);
 
-  // push_url detection (support multiple shapes)
+  // push_url detection
   const pushConfig = req.body?.configuration?.pushNotificationConfig ?? null;
   const pushUrlFromConfig = pushConfig?.url ?? null;
   const pushTokenFromConfig = pushConfig?.token ?? null;
 
-  const pushUrlFromParams = params?.push_url ?? params?.pushUrl ?? params?.pushUrlFrom ?? null;
+  const params = req.body?.params ?? {};
+  const pushUrlFromParams = params?.push_url ?? params?.pushUrl ?? null;
   const pushTokenFromParams = params?.push_token ?? params?.pushToken ?? null;
 
   const pushUrl = pushUrlFromParams ?? pushUrlFromConfig ?? null;
   const pushToken = pushTokenFromParams ?? pushTokenFromConfig ?? null;
 
-  // Prepare the input we hand to the agent: keep params and message so agent has full context
-  const agentInput = { params, message };
-
-  // ASYNC/push mode
+  // ASYNC (push_url)
   if (pushUrl) {
     try {
-      // acknowledge immediately
       if (id) res.status(202).json({ jsonrpc: jsonrpcVersion, id, result: { status: "accepted" } });
       else res.status(202).json({ ok: true, status: "accepted" });
     } catch (ackErr) {
       console.error("[A2A] ack failed:", ackErr);
     }
 
-    // handle in background and post to push_url
     (async () => {
       try {
-        const agentReply = await handleDomainMessage(agentInput);
+        const agentReply = await handleDomainMessage(String(userText));
 
-        // If agentReply already is a full JSON-RPC envelope, post it
+        // If already envelope
         if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) {
           await postToPushUrl(pushUrl, agentReply, pushToken);
           return;
         }
 
-        // If agentReply contains 'result' or 'output', wrap into JSON-RPC result envelope
         if (agentReply?.result) {
-          const payload = { jsonrpc: "2.0", id, result: agentReply.result };
+          const payload = buildJsonRpcResult(id, agentReply.result);
           await postToPushUrl(pushUrl, payload, pushToken);
           return;
         }
 
-        // If agentReply contains 'error'
         if (agentReply?.error) {
           const payload = buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null);
           await postToPushUrl(pushUrl, payload, pushToken);
           return;
         }
 
-        // fallback: treat agentReply as simple text or object
         if (typeof agentReply === "string") {
           const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply, artifacts: [{ type: "text/plain", parts: [{ text: agentReply }] }] } });
           await postToPushUrl(pushUrl, payload, pushToken);
           return;
         }
 
-        // final fallback: JSON.stringify
         const payload = buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentReply }] }] } });
         await postToPushUrl(pushUrl, payload, pushToken);
       } catch (err: any) {
@@ -161,14 +162,12 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
   // SYNC mode
   try {
-    const agentReply = await handleDomainMessage(agentInput);
+    const agentReply = await handleDomainMessage(String(userText));
 
-    // If agentReply already looks like full envelope, return it directly
     if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) {
       return res.json(agentReply);
     }
 
-    // If it's a 'result' shaped object, return a full JSON-RPC envelope (respect id)
     if (agentReply?.result) {
       return res.json({ jsonrpc: "2.0", id, result: agentReply.result });
     }
@@ -177,13 +176,11 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
       return res.status(500).json(buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null));
     }
 
-    // strings
     if (typeof agentReply === "string") {
       const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply, artifacts: [{ type: "text/plain", parts: [{ text: agentReply }] }] } });
       return res.json(payload);
     }
 
-    // fallback
     const payload = buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentReply }] }] } });
     return res.json(payload);
   } catch (err: any) {

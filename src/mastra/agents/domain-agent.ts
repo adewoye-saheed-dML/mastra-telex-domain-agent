@@ -9,7 +9,7 @@ dotenv.config({ path: "./.env" });
 // Exported agent id used by server/discovery
 export const AGENT_ID = "domain-checker-agent";
 
-// Load WhoisFreaks API key and base URL from environment variables
+// WhoisFreaks config (env)
 const WHOISFREAKS_API_KEY = process.env.WHOISFREAKS_API_KEY ?? "";
 const WHOIS_API_KEY = WHOISFREAKS_API_KEY;
 const WHOISFREAKS_API_BASE = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
@@ -28,15 +28,8 @@ const whoisTool = {
   name: "check_domain_status",
   description: "Checks if a given domain is registered using the WhoisFreaks API.",
   inputSchema: DomainSchema,
-  /**
-   * execute: accepts either a string or an object with { domain }
-   * Returns: a structured object with
-   *  - status: "ok" | "error"
-   *  - data: { domain, registered, expires, registrar, raw }
-   *  - output: { text, artifacts }  <-- shaped for agent output
-   */
   async execute(...args: any[]) {
-    // Accept either plain string domain or an args object
+    // Accept either: plain string domain OR object { domain: "..." }
     let domainArg: string | undefined;
     if (args.length === 1 && typeof args[0] === "string") domainArg = args[0];
     if (args.length === 1 && typeof args[0] === "object" && args[0]?.domain) domainArg = String(args[0].domain);
@@ -48,8 +41,7 @@ const whoisTool = {
 
     const domain = domainArg.trim();
 
-    // Build a best-effort API call to WhoisFreaks
-    // Note: adjust endpoint/query if your WhoisFreaks plan uses different paths
+    // Compose API URL (adjust to your whois provider if needed)
     const url = `${WHOISFREAKS_API_BASE}/whois?apikey=${encodeURIComponent(WHOIS_API_KEY)}&domain=${encodeURIComponent(domain)}`;
 
     try {
@@ -62,7 +54,6 @@ const whoisTool = {
         json = null;
       }
 
-      // Heuristic: look for fields commonly returned by WHOIS APIs
       const registered =
         (json && (json.registered === true || json.is_registered === true || json.domainStatus === "registered")) ||
         (typeof rawText === "string" && /registered/i.test(rawText));
@@ -79,23 +70,15 @@ const whoisTool = {
         raw: json ?? rawText,
       };
 
-      // Create a human-friendly text
       const humanText = structured.registered
         ? `Domain ${domain} appears to be registered.${expires ? ` Expires: ${expires}.` : ""}${registrar ? ` Registrar: ${registrar}.` : ""}`
         : `Domain ${domain} does not appear to be registered.`;
 
-      // Agent-friendly output shape (so agent outputs include artifacts + text)
       const output = {
         text: humanText,
         artifacts: [
-          {
-            type: "application/json",
-            parts: [{ json: structured }],
-          },
-          {
-            type: "text/plain",
-            parts: [{ text: humanText }],
-          },
+          { type: "application/json", parts: [{ json: structured }] },
+          { type: "text/plain", parts: [{ text: humanText }] },
         ],
         metadata: { tool: whoisTool.name },
       };
@@ -111,7 +94,7 @@ const whoisTool = {
   },
 };
 
-// Create the Mastra Agent (model specified as Mastra expects)
+// Create the Mastra Agent
 export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
@@ -122,7 +105,7 @@ export const domainAgent = new Agent({
 });
 
 /**
- * Utility: check whether an object already looks like a JSON-RPC envelope or Mastra-like 'result' structure.
+ * Minimal check for "already a JSON-RPC-like result"
  */
 function looksLikeResultEnvelope(obj: any) {
   if (!obj || typeof obj !== "object") return false;
@@ -133,22 +116,24 @@ function looksLikeResultEnvelope(obj: any) {
 }
 
 /**
- * handleDomainMessage: run the agent and return a value that the server can embed in a JSON-RPC envelope.
- * - If the agent already produced a JSON-RPC envelope, return it as-is (pass-through).
- * - Else, if the agent returned an object with output, wrap as { result: { ok: true, output: {...} } }
- * - Else, convert string -> output.text
+ * handleDomainMessage - Option A
+ * Input: a plain string (user's text)
+ * Behavior:
+ *  - construct a single clean Mastra message: { role: "user", content: "<text>" }
+ *  - call agent.generate({ message: { role, content } })
+ *  - prefer agent-native envelope if present; otherwise wrap into { result: { ok: true, output: { ... } } }
  */
-export async function handleDomainMessage(input: any): Promise<any> {
-  // We pass a message-shaped payload so the agent receives the full message object.
-  const message = typeof input === "string" ? { role: "user", parts: [{ kind: "text", text: input }] } : input;
-
+export async function handleDomainMessage(userText: string): Promise<any> {
   try {
+    const message = { role: "user", content: String(userText ?? "").trim() };
+
+    // Pass the *single* normalized message to the agent
     const agentResult = await (domainAgent as any).generate({ message });
 
-    // If agentResult already looks like a result/envelope, return as-is
+    // If agent already returned a JSON-RPC-like envelope, pass through
     if (looksLikeResultEnvelope(agentResult)) return agentResult;
 
-    // If agentResult has explicit output (our whoisTool returns output), respect it
+    // If agent returned an object with output, honor it
     if (agentResult && typeof agentResult === "object") {
       if (agentResult.output) {
         return { result: { ok: true, output: agentResult.output } };
@@ -157,24 +142,18 @@ export async function handleDomainMessage(input: any): Promise<any> {
         const text = agentResult.output_text ?? agentResult.text;
         return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
       }
-      // If the tool returned { status, data, output } (our whoisTool), prefer output
-      if (agentResult.output) return { result: { ok: true, output: agentResult.output } };
       if (agentResult.data) {
-        const text = JSON.stringify(agentResult.data, null, 2);
-        return { result: { ok: true, output: { text, artifacts: [{ type: "application/json", parts: [{ json: agentResult.data }] }] } } };
+        return { result: { ok: true, output: { text: JSON.stringify(agentResult.data, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult.data }] }] } } };
       }
     }
 
-    // Fallback: if it's a string
     if (typeof agentResult === "string") {
       const text = agentResult;
       return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
     }
 
-    // Last resort: stringify
     return { result: { ok: true, output: { text: JSON.stringify(agentResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult }] }] } } };
   } catch (err: any) {
-    // consistent error object
     return {
       error: {
         code: -32000,
