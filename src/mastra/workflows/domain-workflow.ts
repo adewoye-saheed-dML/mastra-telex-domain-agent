@@ -36,19 +36,21 @@ if (!agentId) {
 const domainWorkflowConfig = {
   active: true,
   category: "utilities",
-  description: "Checks domain availability and posts a TLD of the Week.",
+  description: "Checks domain availability.",
   id: WORKFLOW_ID,
   long_description: `
       You are a helpful Domain Assistant. Your job is to check the availability of domain names for a user.
 
       When a user asks to check a domain (e.g., "is example.com available?"), you must use the domain-checker-agent to get the status of the domain.
 
-      Additionally, you will provide a "TLD of the Week" recommendation to the user. This should be a top-level domain (TLD) that is currently popular or trending, along with a brief explanation of why it's a good choice.
-      
+      Guidelines:
+      - Always use the domain-checker-agent tool to check domain availability.
+      - Do not attempt to guess or provide availability information without using the tool.
+      - Provide clear and concise responses based on the tool's output.     
       - Always ask for a domain name if one is not provided.
       - Clearly state the answer you get from the tool.
   `,
-  name: "Domain & TLD Agent",
+  name: "Domain Agent",
 
   inputSchema,
   outputSchema,
