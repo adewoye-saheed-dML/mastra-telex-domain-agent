@@ -29,47 +29,30 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
 
 // Helper: extract plain user text ONLY (Option A)
 function extractUserText(reqBody: any): string {
-  // Typical Telex/Mastra shape: params.message.parts => pick first text part that looks like user text
   const msg = reqBody?.params?.message ?? reqBody?.message ?? null;
 
   if (msg && Array.isArray(msg.parts)) {
-    // scan for first parts[].text string
     for (const p of msg.parts) {
       if (!p) continue;
       if (typeof p.text === "string" && p.text.trim()) return p.text.trim();
-      // sometimes nested as p.payload or p.body
       if (typeof p.payload === "string" && p.payload.trim()) return p.payload.trim();
       if (typeof p.body === "string" && p.body.trim()) return p.body.trim();
     }
   }
 
-  // fallback shapes
   if (typeof reqBody?.input === "string" && reqBody.input.trim()) return reqBody.input.trim();
   if (typeof reqBody?.params?.input === "string" && reqBody.params.input.trim()) return reqBody.params.input.trim();
   if (typeof reqBody?.text === "string" && reqBody.text.trim()) return reqBody.text.trim();
 
-  // last resort: return empty string (agent will handle asking for domain)
   return "";
 }
 
 function buildJsonRpcResult(idValue: any, resultObj: any) {
-  return {
-    jsonrpc: "2.0",
-    id: idValue ?? null,
-    result: resultObj,
-  };
+  return { jsonrpc: "2.0", id: idValue ?? null, result: resultObj };
 }
 
 function buildJsonRpcError(idValue: any, code: number, message: string, data?: any) {
-  return {
-    jsonrpc: "2.0",
-    id: idValue ?? null,
-    error: {
-      code,
-      message,
-      data,
-    },
-  };
+  return { jsonrpc: "2.0", id: idValue ?? null, error: { code, message, data } };
 }
 
 async function postToPushUrl(pushUrl: string, payload: any, token?: string | null) {
@@ -78,121 +61,84 @@ async function postToPushUrl(pushUrl: string, payload: any, token?: string | nul
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const resp = await fetch(pushUrl, { method: "POST", headers, body: JSON.stringify(payload) });
     const bodyText = await resp.text().catch(() => "");
-    if (!resp.ok) {
-      console.error(`[push_to_url] returned ${resp.status} ${resp.statusText} - ${bodyText}`);
-    } else {
-      console.log(`[push_to_url] posted final result (status ${resp.status})`);
-    }
+    if (!resp.ok) console.error(`[push_to_url] error ${resp.status}: ${bodyText}`);
+    else console.log(`[push_to_url] posted final result`);
   } catch (err) {
-    console.error("[push_to_url] failed to POST to push_url:", err);
+    console.error("[push_to_url] failed:", err);
   }
 }
 
-// Main A2A endpoint (sync + async/push_url)
 app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   console.log("[A2A] headers:", JSON.stringify(req.headers, null, 2));
   console.log("[A2A] body:", JSON.stringify(req.body, null, 2));
 
   const jsonrpcVersion = req.body?.jsonrpc ?? "2.0";
   const id = req.body?.id ?? null;
-
-  // --- Option A: normalize to a single text string ---
   const userText = extractUserText(req.body);
 
-  // push_url detection
   const pushConfig = req.body?.configuration?.pushNotificationConfig ?? null;
-  const pushUrlFromConfig = pushConfig?.url ?? null;
-  const pushTokenFromConfig = pushConfig?.token ?? null;
+  const pushUrl = req.body?.params?.push_url ?? req.body?.params?.pushUrl ?? pushConfig?.url ?? null;
+  const pushToken = req.body?.params?.push_token ?? req.body?.params?.pushToken ?? pushConfig?.token ?? null;
 
-  const params = req.body?.params ?? {};
-  const pushUrlFromParams = params?.push_url ?? params?.pushUrl ?? null;
-  const pushTokenFromParams = params?.push_token ?? params?.pushToken ?? null;
-
-  const pushUrl = pushUrlFromParams ?? pushUrlFromConfig ?? null;
-  const pushToken = pushTokenFromParams ?? pushTokenFromConfig ?? null;
-
-  // ASYNC (push_url)
+  // ASYNC
   if (pushUrl) {
     try {
       if (id) res.status(202).json({ jsonrpc: jsonrpcVersion, id, result: { status: "accepted" } });
       else res.status(202).json({ ok: true, status: "accepted" });
-    } catch (ackErr) {
-      console.error("[A2A] ack failed:", ackErr);
-    }
+    } catch {}
 
     (async () => {
       try {
         const agentReply = await handleDomainMessage(String(userText));
 
-        // If already envelope
-        if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) {
-          await postToPushUrl(pushUrl, agentReply, pushToken);
-          return;
-        }
+        if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error))
+          return await postToPushUrl(pushUrl, agentReply, pushToken);
 
-        if (agentReply?.result) {
-          const payload = buildJsonRpcResult(id, agentReply.result);
-          await postToPushUrl(pushUrl, payload, pushToken);
-          return;
-        }
+        if (agentReply?.result)
+          return await postToPushUrl(pushUrl, buildJsonRpcResult(id, agentReply.result), pushToken);
 
-        if (agentReply?.error) {
-          const payload = buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null);
-          await postToPushUrl(pushUrl, payload, pushToken);
-          return;
-        }
+        if (agentReply?.error)
+          return await postToPushUrl(pushUrl, buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message), pushToken);
 
         if (typeof agentReply === "string") {
           const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply, artifacts: [{ type: "text/plain", parts: [{ text: agentReply }] }] } });
-          await postToPushUrl(pushUrl, payload, pushToken);
-          return;
+          return await postToPushUrl(pushUrl, payload, pushToken);
         }
 
         const payload = buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentReply }] }] } });
-        await postToPushUrl(pushUrl, payload, pushToken);
+        return await postToPushUrl(pushUrl, payload, pushToken);
       } catch (err: any) {
-        console.error("[A2A] background error:", err);
-        const errPayload = buildJsonRpcError(id, -32000, String(err?.message ?? err), { where: "background_post" });
+        const errPayload = buildJsonRpcError(id, -32000, String(err?.message ?? err));
         await postToPushUrl(pushUrl, errPayload, pushToken);
       }
     })();
-
     return;
   }
 
-  // SYNC mode
+  // SYNC
   try {
     const agentReply = await handleDomainMessage(String(userText));
 
-    if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) {
-      return res.json(agentReply);
-    }
+    if (agentReply?.jsonrpc) return res.json(agentReply);
 
-    if (agentReply?.result) {
-      return res.json({ jsonrpc: "2.0", id, result: agentReply.result });
-    }
+    if (agentReply?.result) return res.json(buildJsonRpcResult(id, agentReply.result));
 
-    if (agentReply?.error) {
-      return res.status(500).json(buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null));
-    }
+    if (agentReply?.error)
+      return res.status(500).json(buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message));
 
     if (typeof agentReply === "string") {
-      const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply, artifacts: [{ type: "text/plain", parts: [{ text: agentReply }] }] } });
+      const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply } });
       return res.json(payload);
     }
 
-    const payload = buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentReply }] }] } });
-    return res.json(payload);
+    return res.json(buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2) } }));
   } catch (err: any) {
-    console.error("[A2A] synchronous error:", err);
-    const errPayload = buildJsonRpcError(id, -32000, String(err?.message ?? err), { where: "sync_handler" });
-    if (id) return res.status(500).json(errPayload);
-    else return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
+    return res.status(500).json(buildJsonRpcError(id, -32000, String(err?.message ?? err)));
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Mastra A2A invoke URL: ${A2A_BASE}/a2a/agent/${AGENT_ID}`);
-  console.log(`Discovery (agent card): ${A2A_BASE}/a2a/agent/${AGENT_ID}/.well-known/agent.json`);
-  console.log(`Local server listening on port ${PORT}`);
+  console.log(`Discovery: ${A2A_BASE}/a2a/agent/${AGENT_ID}/.well-known/agent.json`);
+  console.log(`Server running on port ${PORT}`);
 });
