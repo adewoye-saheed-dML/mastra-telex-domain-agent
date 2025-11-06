@@ -1,9 +1,8 @@
-
+// src/mastra/agents/domain-agent.ts
 import { Agent } from "@mastra/core/agent";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { z } from "zod";
-import util from "util";
 
 dotenv.config({ path: "./.env" });
 
@@ -24,16 +23,91 @@ const DomainSchema = z.object({
   domain: z.string().min(3, "Please provide a valid domain name."),
 });
 
-// (whoisTool implementation unchanged from the working version you already have)
+// Whois tool: returns structured data and a text representation
 const whoisTool = {
   name: "check_domain_status",
   description: "Checks if a given domain is registered using the WhoisFreaks API.",
   inputSchema: DomainSchema,
+  /**
+   * execute: accepts either a string or an object with { domain }
+   * Returns: a structured object with
+   *  - status: "ok" | "error"
+   *  - data: { domain, registered, expires, registrar, raw }
+   *  - output: { text, artifacts }  <-- shaped for agent output
+   */
   async execute(...args: any[]) {
-    // (omitted here for brevity in this snippet — assume this is your working version from earlier)
-    // ... existing execute implementation (unchanged)
-    // NOTE: in your file keep the full execute logic you had that extracts domain and calls WHOISFREAKS_API.
-    return `placeholder - keep your real execute implementation here`;
+    // Accept either plain string domain or an args object
+    let domainArg: string | undefined;
+    if (args.length === 1 && typeof args[0] === "string") domainArg = args[0];
+    if (args.length === 1 && typeof args[0] === "object" && args[0]?.domain) domainArg = String(args[0].domain);
+    if (args.length > 1 && typeof args[0] === "object" && args[0].domain) domainArg = String(args[0].domain);
+
+    if (!domainArg || typeof domainArg !== "string") {
+      throw new Error("whoisTool: missing domain argument");
+    }
+
+    const domain = domainArg.trim();
+
+    // Build a best-effort API call to WhoisFreaks
+    // Note: adjust endpoint/query if your WhoisFreaks plan uses different paths
+    const url = `${WHOISFREAKS_API_BASE}/whois?apikey=${encodeURIComponent(WHOIS_API_KEY)}&domain=${encodeURIComponent(domain)}`;
+
+    try {
+      const resp = await fetch(url, { method: "GET" });
+      const rawText = await resp.text().catch(() => "");
+      let json: any = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        json = null;
+      }
+
+      // Heuristic: look for fields commonly returned by WHOIS APIs
+      const registered =
+        (json && (json.registered === true || json.is_registered === true || json.domainStatus === "registered")) ||
+        (typeof rawText === "string" && /registered/i.test(rawText));
+
+      const expires = json?.expires || json?.expiryDate || json?.expiration_date || null;
+      const registrar = json?.registrar || null;
+
+      const structured = {
+        status: resp.ok ? "ok" : "error",
+        domain,
+        registered: Boolean(registered),
+        expires,
+        registrar,
+        raw: json ?? rawText,
+      };
+
+      // Create a human-friendly text
+      const humanText = structured.registered
+        ? `Domain ${domain} appears to be registered.${expires ? ` Expires: ${expires}.` : ""}${registrar ? ` Registrar: ${registrar}.` : ""}`
+        : `Domain ${domain} does not appear to be registered.`;
+
+      // Agent-friendly output shape (so agent outputs include artifacts + text)
+      const output = {
+        text: humanText,
+        artifacts: [
+          {
+            type: "application/json",
+            parts: [{ json: structured }],
+          },
+          {
+            type: "text/plain",
+            parts: [{ text: humanText }],
+          },
+        ],
+        metadata: { tool: whoisTool.name },
+      };
+
+      return { status: "ok", data: structured, output };
+    } catch (err: any) {
+      return {
+        status: "error",
+        error: { message: String(err?.message ?? err), code: -32001 },
+        output: { text: `Error checking domain ${domain}: ${String(err?.message ?? err)}` },
+      };
+    }
   },
 };
 
@@ -41,125 +115,73 @@ const whoisTool = {
 export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
-  instructions: "You check domain name registrations. To do this, you MUST use the 'check_domain_status' tool. ONLY use this tool.",
+  instructions:
+    "You are a domain name checking assistant. When asked to check a domain you MUST use the 'check_domain_status' tool and return the tool output verbatim inside the agent output (do not invent additional facts). The tool returns both structured artifacts and a human text summary; ensure your final output includes the tool's text and artifacts.",
   model: { id: "google/gemini-2.5-pro" },
   tools: { [whoisTool.name]: whoisTool },
 });
 
-// --- UPDATED handler: only this function changed to extract text from more possible fields ---
-function extractTextFromResult(result: any): string | null {
-  if (!result) return null;
-
-  // 1) top-level text
-  if (typeof result.text === "string" && result.text.trim()) return result.text.trim();
-
-  // 2) common single-field places
-  if (typeof result.output_text === "string" && result.output_text.trim()) return result.output_text.trim();
-  if (typeof result.result === "string" && result.result.trim()) return result.result.trim();
-  if (typeof result.output === "string" && result.output.trim()) return result.output.trim();
-
-  // 3) output.text
-  if (result.output?.text && typeof result.output.text === "string" && result.output.text.trim()) return result.output.text.trim();
-
-  // 4) artifacts (first artifact text)
-  try {
-    const art = result.artifacts?.[0]?.parts?.[0]?.text;
-    if (art && typeof art === "string" && art.trim()) return art.trim();
-  } catch {}
-
-  // 5) uiMessages -> metadata.__originalContent or parts
-  try {
-    const ui = result.uiMessages?.[0];
-    if (ui) {
-      const orig = ui.metadata?.__originalContent;
-      if (orig && typeof orig === "string" && orig.trim()) return orig.trim();
-      // parts array
-      if (Array.isArray(ui.parts)) {
-        for (const p of ui.parts) {
-          if (p?.text && typeof p.text === "string" && p.text.trim()) return p.text.trim();
-        }
-      }
-    }
-  } catch {}
-
-  // 6) steps[].content[] entries of type 'text'
-  try {
-    if (Array.isArray(result.steps)) {
-      for (const step of result.steps) {
-        if (!step?.content || !Array.isArray(step.content)) continue;
-        for (const c of step.content) {
-          if (c?.type === "text" && typeof c.text === "string" && c.text.trim()) return c.text.trim();
-          // sometimes nested under 'output' or 'text'
-          if (c?.output?.text && typeof c.output.text === "string" && c.output.text.trim()) return c.output.text.trim();
-          if (c?.text && typeof c.text === "string" && c.text.trim()) return c.text.trim();
-        }
-      }
-    }
-  } catch {}
-
-  // 7) Try outputs array
-  try {
-    if (Array.isArray(result.outputs)) {
-      for (const o of result.outputs) {
-        if (o?.output_text && typeof o.output_text === "string" && o.output_text.trim()) return o.output_text.trim();
-      }
-    }
-  } catch {}
-
-  // 8) fallback: look for any first string value deeply (compact scan)
-  try {
-    const seen = new Set<any>();
-    const stack = [result];
-    while (stack.length) {
-      const node = stack.pop();
-      if (!node || typeof node !== "object" || seen.has(node)) continue;
-      seen.add(node);
-      for (const k of Object.keys(node)) {
-        const v = node[k];
-        if (typeof v === "string" && v.trim().length > 0) {
-          // heuristic: ignore long base64 or signatures by checking length and presence of whitespace
-          if (v.length < 2000) return v.trim();
-        } else if (typeof v === "object") {
-          stack.push(v);
-        }
-      }
-    }
-  } catch {}
-
-  return null;
+/**
+ * Utility: check whether an object already looks like a JSON-RPC envelope or Mastra-like 'result' structure.
+ */
+function looksLikeResultEnvelope(obj: any) {
+  if (!obj || typeof obj !== "object") return false;
+  if (obj.jsonrpc === "2.0" && ("result" in obj || "error" in obj)) return true;
+  if (obj.result && typeof obj.result === "object" && (obj.result.output || obj.result.ok !== undefined)) return true;
+  if (obj.output && (obj.output.text || obj.output.artifacts)) return true;
+  return false;
 }
 
-export async function handleDomainMessage(inputText: string): Promise<string> {
+/**
+ * handleDomainMessage: run the agent and return a value that the server can embed in a JSON-RPC envelope.
+ * - If the agent already produced a JSON-RPC envelope, return it as-is (pass-through).
+ * - Else, if the agent returned an object with output, wrap as { result: { ok: true, output: {...} } }
+ * - Else, convert string -> output.text
+ */
+export async function handleDomainMessage(input: any): Promise<any> {
+  // We pass a message-shaped payload so the agent receives the full message object.
+  const message = typeof input === "string" ? { role: "user", parts: [{ kind: "text", text: input }] } : input;
+
   try {
-    const result: any = await (domainAgent as any).generate(inputText);
+    const agentResult = await (domainAgent as any).generate({ message });
 
-    // log raw result for debugging (kept)
-    console.log("[handleDomainMessage] raw generate result:", util.inspect(result, { depth: 4 }));
+    // If agentResult already looks like a result/envelope, return as-is
+    if (looksLikeResultEnvelope(agentResult)) return agentResult;
 
-    // Use the extractor above
-    const extracted = extractTextFromResult(result);
-    if (extracted) return String(extracted);
-
-    // If extractor couldn't find a good text, return a helpful diagnostic (compact)
-    const short = `[No direct text found in agent result] See server logs for full 'raw generate result'.`;
-    const compact = (() => {
-      try {
-        return JSON.stringify(
-          result,
-          (k, v) => {
-            if (typeof v === "object" && v && Object.keys(v).length > 20) return "[object]";
-            return v;
-          },
-          2
-        ).slice(0, 2000);
-      } catch {
-        return String(result).slice(0, 2000);
+    // If agentResult has explicit output (our whoisTool returns output), respect it
+    if (agentResult && typeof agentResult === "object") {
+      if (agentResult.output) {
+        return { result: { ok: true, output: agentResult.output } };
       }
-    })();
-    return `${short}\n\n${compact}`;
+      if (agentResult.output_text || agentResult.text) {
+        const text = agentResult.output_text ?? agentResult.text;
+        return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
+      }
+      // If the tool returned { status, data, output } (our whoisTool), prefer output
+      if (agentResult.output) return { result: { ok: true, output: agentResult.output } };
+      if (agentResult.data) {
+        const text = JSON.stringify(agentResult.data, null, 2);
+        return { result: { ok: true, output: { text, artifacts: [{ type: "application/json", parts: [{ json: agentResult.data }] }] } } };
+      }
+    }
+
+    // Fallback: if it's a string
+    if (typeof agentResult === "string") {
+      const text = agentResult;
+      return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
+    }
+
+    // Last resort: stringify
+    return { result: { ok: true, output: { text: JSON.stringify(agentResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult }] }] } } };
   } catch (err: any) {
-    console.error("[handleDomainMessage] FAILED:", err);
-    return `Error: ${err.message ?? String(err)}`;
+    // consistent error object
+    return {
+      error: {
+        code: -32000,
+        message: String(err?.message ?? err),
+        data: { where: "handleDomainMessage" },
+      },
+    };
   }
 }
 
