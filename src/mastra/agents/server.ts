@@ -47,13 +47,8 @@ function extractUserText(reqBody: any): string {
   return "";
 }
 
-function buildJsonRpcResult(idValue: any, resultObj: any) {
-  return { jsonrpc: "2.0", id: idValue ?? null, result: resultObj };
-}
-
-function buildJsonRpcError(idValue: any, code: number, message: string, data?: any) {
-  return { jsonrpc: "2.0", id: idValue ?? null, error: { code, message, data } };
-}
+function buildJsonRpcResult(idValue: any, resultObj: any) { return { jsonrpc: "2.0", id: idValue ?? null, result: resultObj }; }
+function buildJsonRpcError(idValue: any, code: number, message: string, data?: any) { return { jsonrpc: "2.0", id: idValue ?? null, error: { code, message, data } }; }
 
 async function postToPushUrl(pushUrl: string, payload: any, token?: string | null) {
   try {
@@ -80,38 +75,29 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   const pushUrl = req.body?.params?.push_url ?? req.body?.params?.pushUrl ?? pushConfig?.url ?? null;
   const pushToken = req.body?.params?.push_token ?? req.body?.params?.pushToken ?? pushConfig?.token ?? null;
 
-  // ASYNC
+  // ASYNC (push_url)
   if (pushUrl) {
     try {
       if (id) res.status(202).json({ jsonrpc: jsonrpcVersion, id, result: { status: "accepted" } });
       else res.status(202).json({ ok: true, status: "accepted" });
-    } catch {}
+    } catch (ackErr) { console.error("[A2A] ack failed:", ackErr); }
 
     (async () => {
       try {
         const agentReply = await handleDomainMessage(String(userText));
 
-        if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error))
-          return await postToPushUrl(pushUrl, agentReply, pushToken);
+        if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) { await postToPushUrl(pushUrl, agentReply, pushToken); return; }
+        if (agentReply?.result) { await postToPushUrl(pushUrl, buildJsonRpcResult(id, agentReply.result), pushToken); return; }
+        if (agentReply?.error) { await postToPushUrl(pushUrl, buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null), pushToken); return; }
+        if (typeof agentReply === "string") { await postToPushUrl(pushUrl, buildJsonRpcResult(id, { ok: true, output: { text: agentReply } }), pushToken); return; }
 
-        if (agentReply?.result)
-          return await postToPushUrl(pushUrl, buildJsonRpcResult(id, agentReply.result), pushToken);
-
-        if (agentReply?.error)
-          return await postToPushUrl(pushUrl, buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message), pushToken);
-
-        if (typeof agentReply === "string") {
-          const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply, artifacts: [{ type: "text/plain", parts: [{ text: agentReply }] }] } });
-          return await postToPushUrl(pushUrl, payload, pushToken);
-        }
-
-        const payload = buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentReply }] }] } });
-        return await postToPushUrl(pushUrl, payload, pushToken);
+        await postToPushUrl(pushUrl, buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2) } }), pushToken);
       } catch (err: any) {
         const errPayload = buildJsonRpcError(id, -32000, String(err?.message ?? err));
         await postToPushUrl(pushUrl, errPayload, pushToken);
       }
     })();
+
     return;
   }
 
@@ -120,16 +106,10 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
     const agentReply = await handleDomainMessage(String(userText));
 
     if (agentReply?.jsonrpc) return res.json(agentReply);
-
     if (agentReply?.result) return res.json(buildJsonRpcResult(id, agentReply.result));
+    if (agentReply?.error) return res.status(500).json(buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message ?? "Agent error", agentReply.error.data ?? null));
 
-    if (agentReply?.error)
-      return res.status(500).json(buildJsonRpcError(id, agentReply.error.code ?? -32000, agentReply.error.message));
-
-    if (typeof agentReply === "string") {
-      const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply } });
-      return res.json(payload);
-    }
+    if (typeof agentReply === "string") return res.json(buildJsonRpcResult(id, { ok: true, output: { text: agentReply } }));
 
     return res.json(buildJsonRpcResult(id, { ok: true, output: { text: JSON.stringify(agentReply, null, 2) } }));
   } catch (err: any) {

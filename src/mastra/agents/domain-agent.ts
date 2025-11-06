@@ -12,12 +12,14 @@ const WHOISFREAKS_API_KEY = process.env.WHOISFREAKS_API_KEY ?? "";
 const WHOIS_API_KEY = WHOISFREAKS_API_KEY;
 const WHOISFREAKS_API_BASE = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
 
-if (!WHOISFREAKS_API_KEY) console.warn("WHOISFREAKS_API_KEY missing");
+if (!WHOISFREAKS_API_KEY) console.warn("WHOISFREAKS_API_KEY not set. Add it to .env");
 
+// Tool schema
 const DomainSchema = z.object({
   domain: z.string().min(3, "Please provide a valid domain name."),
 });
 
+// Whois tool
 const whoisTool = {
   name: "check_domain_status",
   description: "Checks if a domain is registered using the WhoisFreaks API.",
@@ -25,24 +27,25 @@ const whoisTool = {
   async execute(...args: any[]) {
     let domainArg: string | undefined;
     if (args.length === 1 && typeof args[0] === "string") domainArg = args[0];
-    if (args.length === 1 && typeof args[0] === "object" && args[0]?.domain) domainArg = args[0].domain;
+    if (args.length === 1 && typeof args[0] === "object" && args[0]?.domain) domainArg = String(args[0].domain);
 
-    if (!domainArg) throw new Error("whoisTool: missing domain");
+    if (!domainArg) throw new Error("whoisTool: missing domain argument");
 
-    const domain = String(domainArg).trim();
+    const domain = domainArg.trim();
     const url = `${WHOISFREAKS_API_BASE}/whois?apikey=${encodeURIComponent(WHOIS_API_KEY)}&domain=${encodeURIComponent(domain)}`;
 
     try {
-      const resp = await fetch(url);
-      const rawText = await resp.text();
+      const resp = await fetch(url, { method: "GET" });
+      const rawText = await resp.text().catch(() => "");
       let json: any = null;
-      try {
-        json = JSON.parse(rawText);
-      } catch {}
+      try { json = rawText ? JSON.parse(rawText) : null; } catch {}
 
-      const registered = json?.registered || json?.is_registered || /registered/i.test(rawText);
-      const expires = json?.expires ?? json?.expiryDate ?? json?.expiration_date ?? null;
-      const registrar = json?.registrar ?? null;
+      const registered =
+        (json && (json.registered === true || json.is_registered === true || json.domainStatus === "registered")) ||
+        (typeof rawText === "string" && /registered/i.test(rawText));
+
+      const expires = json?.expires || json?.expiryDate || json?.expiration_date || null;
+      const registrar = json?.registrar || null;
 
       const structured = {
         status: resp.ok ? "ok" : "error",
@@ -53,72 +56,103 @@ const whoisTool = {
         raw: json ?? rawText,
       };
 
-      const text = registered
-        ? `Domain ${domain} is registered.${expires ? ` Expires: ${expires}.` : ""}`
-        : `Domain ${domain} is not registered.`;
+      const humanText = structured.registered
+        ? `Domain ${domain} appears to be registered.${expires ? ` Expires: ${expires}.` : ""}${registrar ? ` Registrar: ${registrar}.` : ""}`
+        : `Domain ${domain} does not appear to be registered.`;
 
-      return {
-        status: "ok",
-        data: structured,
-        output: {
-          text,
-          artifacts: [
-            { type: "application/json", parts: [{ json: structured }] },
-            { type: "text/plain", parts: [{ text }] },
-          ],
-        },
+      const output = {
+        text: humanText,
+        artifacts: [
+          { type: "application/json", parts: [{ json: structured }] },
+          { type: "text/plain", parts: [{ text: humanText }] },
+        ],
+        metadata: { tool: whoisTool.name },
       };
+
+      return { status: "ok", data: structured, output };
     } catch (err: any) {
       return {
         status: "error",
-        error: { code: -32001, message: String(err) },
-        output: { text: `Error checking ${domain}: ${String(err)}` },
+        error: { message: String(err?.message ?? err), code: -32001 },
+        output: { text: `Error checking domain ${domain}: ${String(err?.message ?? err)}` },
       };
     }
   },
 };
 
+// Create the Mastra Agent
 export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
   instructions:
-    "When asked to check a domain, ALWAYS use the check_domain_status tool and return its output directly.",
+    "You are a domain name checking assistant. When asked to check a domain you MUST use the 'check_domain_status' tool and return the tool output verbatim inside the agent output (do not invent additional facts).",
   model: { id: "google/gemini-2.5-pro" },
   tools: { [whoisTool.name]: whoisTool },
 });
 
+// Detect if an object looks like a JSON-RPC/Mastra result already
 function looksLikeResultEnvelope(obj: any) {
   if (!obj || typeof obj !== "object") return false;
   if (obj.jsonrpc === "2.0" && ("result" in obj || "error" in obj)) return true;
-  if (obj.result?.output) return true;
-  if (obj.output) return true;
+  if (obj.result && typeof obj.result === "object" && (obj.result.output || obj.result.ok !== undefined)) return true;
+  if (obj.output && (obj.output.text || obj.output.artifacts)) return true;
   return false;
 }
 
+/**
+ * handleDomainMessage (Option A)
+ * - Accepts a plain string (userText)
+ * - Constructs a Mastra-compatible messages array:
+ *     [ { role: "user", parts: [{ text: userText }] } ]
+ * - Calls the agent with that array (no nested `{ message: ... }`)
+ * - Returns either a JSON-RPC friendly object { result: { ok: true, output: {...} } } or { error: {...} }
+ */
 export async function handleDomainMessage(userText: string): Promise<any> {
   try {
-    const message = { role: "user", content: userText.trim() };
+    const cleanText = String(userText ?? "").trim();
 
-    const agentResult = await (domainAgent as any).generate({ message });
+    // IMPORTANT: pass an array of messages using `parts` — this is Mastra's required message shape
+    const messages = [
+      {
+        role: "user",
+        parts: [{ text: cleanText }],
+      },
+    ];
 
+    // Call the agent with a message list — NOT with { message: ... }
+    const agentResult = await (domainAgent as any).generate(messages);
+
+    // If the agent already returned a proper envelope, pass through
     if (looksLikeResultEnvelope(agentResult)) return agentResult;
 
-    if (agentResult?.output)
-      return { result: { ok: true, output: agentResult.output } };
+    // If the agent/tool returned 'output' (our whoisTool returns output), wrap as expected
+    if (agentResult && typeof agentResult === "object") {
+      if (agentResult.output) return { result: { ok: true, output: agentResult.output } };
+      if (agentResult.output_text || agentResult.text) {
+        const text = agentResult.output_text ?? agentResult.text;
+        return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
+      }
+      if (agentResult.data) {
+        return { result: { ok: true, output: { text: JSON.stringify(agentResult.data, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult.data }] }] } } };
+      }
+    }
 
-    if (agentResult?.text)
-      return { result: { ok: true, output: { text: agentResult.text } } };
+    // string fallback
+    if (typeof agentResult === "string") {
+      const text = agentResult;
+      return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
+    }
 
+    // last resort
+    return { result: { ok: true, output: { text: JSON.stringify(agentResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult }] }] } } };
+  } catch (err: any) {
     return {
-      result: {
-        ok: true,
-        output: {
-          text: JSON.stringify(agentResult, null, 2),
-        },
+      error: {
+        code: -32000,
+        message: String(err?.message ?? err),
+        data: { where: "handleDomainMessage" },
       },
     };
-  } catch (err: any) {
-    return { error: { code: -32000, message: String(err) } };
   }
 }
 
