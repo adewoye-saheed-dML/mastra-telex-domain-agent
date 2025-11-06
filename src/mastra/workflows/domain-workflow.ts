@@ -1,4 +1,3 @@
-
 import { Workflow } from "@mastra/core";
 import { z } from "zod";
 
@@ -14,18 +13,15 @@ const outputSchema = z.object({
   reply: z.string(),
 });
 
-
 // ---BASE URL & AGENT CONFIG ---
 let A2A_BASE = process.env.MASTRA_A2A_BASE_URL?.trim() ||
   "https://mastra-telex-domain-agent-production.up.railway.app";
-
 
 A2A_BASE = A2A_BASE.replace(/\/$/, "");
 const agentId = AGENT_ID?.trim() || "domain-checker-agent";
 const agentInvokeUrl = `${A2A_BASE}/a2a/agent/${agentId}`;
 
-
-// Validate config to catch misconfiguration early
+// Validate config
 if (!A2A_BASE.startsWith("http")) {
   throw new Error(`Invalid MASTRA_A2A_BASE_URL: ${A2A_BASE}`);
 }
@@ -38,6 +34,8 @@ const domainWorkflowConfig = {
   category: "utilities",
   description: "Checks domain availability.",
   id: WORKFLOW_ID,
+  
+  // --- FINAL FIX ADDED HERE ---
   long_description: `
       You are a helpful Domain Assistant. Your job is to check the availability of domain names for a user.
 
@@ -46,18 +44,19 @@ const domainWorkflowConfig = {
       Guidelines:
       - Always use the domain-checker-agent tool to check domain availability.
       - Do not attempt to guess or provide availability information without using the tool.
-      - Provide clear and concise responses based on the tool's output.     
+      - Provide clear and concise responses based on the tool's output.       
       - Always ask for a domain name if one is not provided.
       - Clearly state the answer you get from the tool.
+      - **If the tool returns a message that starts with "Error:", you must apologize and show that full error message to the user.**
   `,
+  
   name: "Domain Agent",
-
   inputSchema,
   outputSchema,
 
   nodes: [
     {
-      id: "domain-checker-agent",
+      id: "domain-checker-agent", // Correctly matches prompt
       name: "Domain Agent Node",
       parameters: {},
       position: [800, -100],
