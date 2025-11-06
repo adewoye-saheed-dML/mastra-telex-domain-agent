@@ -1,4 +1,3 @@
-// src/mastra/agents/server.ts
 import express from "express";
 import type { Request, Response } from "express";
 import dotenv from "dotenv";
@@ -27,25 +26,7 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
   });
 });
 
-// Helper: extract plain user text ONLY (Option A)
-function extractUserText(reqBody: any): string {
-  const msg = reqBody?.params?.message ?? reqBody?.message ?? null;
-
-  if (msg && Array.isArray(msg.parts)) {
-    for (const p of msg.parts) {
-      if (!p) continue;
-      if (typeof p.text === "string" && p.text.trim()) return p.text.trim();
-      if (typeof p.payload === "string" && p.payload.trim()) return p.payload.trim();
-      if (typeof p.body === "string" && p.body.trim()) return p.body.trim();
-    }
-  }
-
-  if (typeof reqBody?.input === "string" && reqBody.input.trim()) return reqBody.input.trim();
-  if (typeof reqBody?.params?.input === "string" && reqBody.params.input.trim()) return reqBody.params.input.trim();
-  if (typeof reqBody?.text === "string" && reqBody.text.trim()) return reqBody.text.trim();
-
-  return "";
-}
+// ❌ REMOVED: extractUserText function is the source of the problem.
 
 function buildJsonRpcResult(idValue: any, resultObj: any) { return { jsonrpc: "2.0", id: idValue ?? null, result: resultObj }; }
 function buildJsonRpcError(idValue: any, code: number, message: string, data?: any) { return { jsonrpc: "2.0", id: idValue ?? null, error: { code, message, data } }; }
@@ -69,7 +50,17 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
   const jsonrpcVersion = req.body?.jsonrpc ?? "2.0";
   const id = req.body?.id ?? null;
-  const userText = extractUserText(req.body);
+
+  // ✅ FIX: Get the *entire* message object from the request.
+  // This is what the agent actually wants, not just the text.
+  const message = req.body?.params?.message ?? req.body?.message ?? null;
+
+  // ✅ FIX: Basic validation
+  if (!message || !message.parts || !Array.isArray(message.parts)) {
+    console.error("[A2A] Invalid or missing message object in request body.");
+    const errPayload = buildJsonRpcError(id, -32602, "Invalid params: 'message' object is missing or invalid.");
+    return res.status(400).json(errPayload);
+  }
 
   const pushConfig = req.body?.configuration?.pushNotificationConfig ?? null;
   const pushUrl = req.body?.params?.push_url ?? req.body?.params?.pushUrl ?? pushConfig?.url ?? null;
@@ -84,7 +75,8 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
     (async () => {
       try {
-        const agentReply = await handleDomainMessage(String(userText));
+        // ✅ FIX: Pass the full message object
+        const agentReply = await handleDomainMessage(message);
 
         if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) { await postToPushUrl(pushUrl, agentReply, pushToken); return; }
         if (agentReply?.result) { await postToPushUrl(pushUrl, buildJsonRpcResult(id, agentReply.result), pushToken); return; }
@@ -103,7 +95,8 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
   // SYNC
   try {
-    const agentReply = await handleDomainMessage(String(userText));
+    // ✅ FIX: Pass the full message object
+    const agentReply = await handleDomainMessage(message);
 
     if (agentReply?.jsonrpc) return res.json(agentReply);
     if (agentReply?.result) return res.json(buildJsonRpcResult(id, agentReply.result));

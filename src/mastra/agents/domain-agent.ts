@@ -1,4 +1,3 @@
-// src/mastra/agents/domain-agent.ts
 import { Agent } from "@mastra/core/agent";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
@@ -103,23 +102,18 @@ function looksLikeResultEnvelope(obj: any) {
  * handleDomainMessage (Option A)
  * - Accepts a plain string (userText)
  * - Constructs a Mastra-compatible messages array:
- *     [ { role: "user", parts: [{ text: userText }] } ]
+ * [ { role: "user", parts: [{ text: userText }] } ]
  * - Calls the agent with that array (no nested `{ message: ... }`)
  * - Returns either a JSON-RPC friendly object { result: { ok: true, output: {...} } } or { error: {...} }
  */
-export async function handleDomainMessage(userText: string): Promise<any> {
+// ✅ FIX: Change signature to accept the full message object, not just a string.
+export async function handleDomainMessage(message: any): Promise<any> {
   try {
-    const cleanText = String(userText ?? "").trim();
+    // ✅ FIX: Pass the original message from the platform directly to the agent.
+    // The 'generate' method expects an *array* of message objects.
+    const messages = [message];
 
-    // IMPORTANT: pass an array of messages using `parts` — this is Mastra's required message shape
-    const messages = [
-      {
-        role: "user",
-        parts: [{ text: cleanText }],
-      },
-    ];
-
-    // Call the agent with a message list — NOT with { message: ... }
+    // Call the agent with the full, original message list
     const agentResult = await (domainAgent as any).generate(messages);
 
     // If the agent already returned a proper envelope, pass through
@@ -146,9 +140,11 @@ export async function handleDomainMessage(userText: string): Promise<any> {
     // last resort
     return { result: { ok: true, output: { text: JSON.stringify(agentResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: agentResult }] }] } } };
   } catch (err: any) {
+    console.error("❌ 'handleDomainMessage' failed:", err); // Added better logging
     return {
       error: {
         code: -32000,
+        // ✅ FIX: Pass the actual error message
         message: String(err?.message ?? err),
         data: { where: "handleDomainMessage" },
       },
