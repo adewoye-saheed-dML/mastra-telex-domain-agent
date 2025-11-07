@@ -90,4 +90,4 @@ const domainWorkflowConfig = {
   short_description: "Check domain availability.",
 };
 
-export const domainWorkflow = new Workflow(domainWorkflowConfig);
+export const domainWorkflow = new Workflow(domainWorkflowConfig); 
