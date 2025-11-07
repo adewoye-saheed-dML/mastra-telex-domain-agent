@@ -1,4 +1,3 @@
-// agents/domain-agent.js
 import { Agent } from "@mastra/core/agent";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
@@ -8,9 +7,9 @@ dotenv.config({ path: "./.env" });
 
 export const AGENT_ID = "domain-checker-agent";
 
-const WHOISFREAKS_API_KEY = process.env.WHOISFREAKS_API_KEY ?? "";
-const WHOIS_API_KEY = WHOISFREAKS_API_KEY;
-const WHOISFREAKS_API_BASE = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
+const WHOISFREAKS_API_KEY: string = process.env.WHOISFREAKS_API_KEY ?? "";
+const WHOIS_API_KEY: string = WHOISFREAKS_API_KEY;
+const WHOISFREAKS_API_BASE: string = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
 
 if (!WHOISFREAKS_API_KEY) console.warn("WHOISFREAKS_API_KEY not set. Add it to .env");
 
@@ -18,15 +17,31 @@ const DomainSchema = z.object({
   domain: z.string().min(3, "Please provide a valid domain name."),
 });
 
-// whois tool (kept logic, returned structured output)
+interface WhoisStructured {
+  status: string;
+  domain: string;
+  registered: boolean;
+  expires?: string | null;
+  registrar?: string | null;
+  raw?: any;
+}
+
+interface ToolOutput {
+  text: string;
+  artifacts: Array<{ type: string; parts: any[] }>;
+  metadata?: Record<string, any>;
+}
+
+// whois tool
 const whoisTool = {
   name: "check_domain_status",
   description: "Checks if a domain is registered using the WhoisFreaks API.",
   inputSchema: DomainSchema,
-  async execute(...args) {
-    let domainArg;
+  async execute(...args: unknown[]): Promise<any> {
+    let domainArg: string | undefined;
     if (args.length === 1 && typeof args[0] === "string") domainArg = args[0];
-    if (args.length === 1 && typeof args[0] === "object" && args[0]?.domain) domainArg = String(args[0].domain);
+    if (args.length === 1 && typeof args[0] === "object" && (args[0] as any)?.domain)
+      domainArg = String((args[0] as any).domain);
 
     if (!domainArg) throw new Error("whoisTool: missing domain argument");
 
@@ -36,8 +51,12 @@ const whoisTool = {
     try {
       const resp = await fetch(url, { method: "GET" });
       const rawText = await resp.text().catch(() => "");
-      let json = null;
-      try { json = rawText ? JSON.parse(rawText) : null; } catch {}
+      let json: any = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        /* ignore */
+      }
 
       const registered =
         (json && (json.registered === true || json.is_registered === true || json.domainStatus === "registered")) ||
@@ -46,7 +65,7 @@ const whoisTool = {
       const expires = json?.expires || json?.expiryDate || json?.expiration_date || null;
       const registrar = json?.registrar || null;
 
-      const structured = {
+      const structured: WhoisStructured = {
         status: resp.ok ? "ok" : "error",
         domain,
         registered: Boolean(registered),
@@ -56,10 +75,12 @@ const whoisTool = {
       };
 
       const humanText = structured.registered
-        ? `Domain ${domain} appears to be registered.${expires ? ` Expires: ${expires}.` : ""}${registrar ? ` Registrar: ${registrar}.` : ""}`
+        ? `Domain ${domain} appears to be registered.${expires ? ` Expires: ${expires}.` : ""}${
+            registrar ? ` Registrar: ${registrar}.` : ""
+          }`
         : `Domain ${domain} does not appear to be registered.`;
 
-      const output = {
+      const output: ToolOutput = {
         text: humanText,
         artifacts: [
           { type: "application/json", parts: [{ json: structured }] },
@@ -69,7 +90,7 @@ const whoisTool = {
       };
 
       return { status: "ok", data: structured, output };
-    } catch (err) {
+    } catch (err: any) {
       return {
         status: "error",
         error: { message: String(err?.message ?? err), code: -32001 },
@@ -79,56 +100,44 @@ const whoisTool = {
   },
 };
 
-// Create domainAgent (kept as-is for discovery, but we won't rely on streaming generate)
 export const domainAgent = new Agent({
   id: AGENT_ID,
   name: "Domain Checker",
   instructions:
-    "You are a domain name checking assistant. When asked to check a domain you MUST use the 'check_domain_status' tool and return the tool output verbatim inside the agent output (do not invent additional facts).",
+    "You are a domain name checking assistant. When asked to check a domain you MUST use the 'check_domain_status' tool and return the tool output verbatim inside the agent output.",
   model: { id: "google/gemini-2.5-pro" },
   tools: { [whoisTool.name]: whoisTool },
 });
 
-// helper: remove HTML and extract first domain-like token
-function stripHtml(txt) {
+// helpers
+function stripHtml(txt: string): string {
   if (!txt || typeof txt !== "string") return txt ?? "";
   return txt.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function extractDomainFromText(text) {
+function extractDomainFromText(text: string): string | null {
   if (!text || typeof text !== "string") return null;
-  // strip common url prefixes
   const clean = stripHtml(text).replace(/https?:\/\//gi, "").replace(/www\./gi, "");
-  // simple domain regex: handles foo.com, sub.foo.co.uk etc
   const match = clean.match(/\b([a-z0-9-]{1,63}\.)+[a-z]{2,63}\b/i);
-  if (!match) return null;
-  return match[0].toLowerCase();
+  return match ? match[0].toLowerCase() : null;
 }
 
-// expose the whois check function for direct calls
-export async function checkDomainStatus(domain) {
+export async function checkDomainStatus(domain: string): Promise<any> {
   return await whoisTool.execute(domain);
 }
 
-/**
- * handleDomainMessage:
- *  - Accepts the Telex message object (the full message with parts).
- *  - Extracts the user's text, finds a domain, calls whoisTool, and returns a JSON-RPC envelope.
- */
-export async function handleDomainMessage(message) {
+export async function handleDomainMessage(message: any): Promise<any> {
   try {
     if (!message || !message.parts || !Array.isArray(message.parts)) {
       throw new Error("Invalid message object (missing parts)");
     }
 
-    // Find the first text part in message.parts (fallback to first string)
     let userText = "";
-    for (const part of message.parts) {
+    for (const part of message.parts as any[]) {
       if ((part.kind === "text" || part.type === "text") && typeof part.text === "string" && part.text.trim()) {
         userText = part.text.trim();
         break;
       }
-      // also support nested 'data' arrays in rare cases
       if (part.kind === "data" && Array.isArray(part.data)) {
         for (const nested of part.data) {
           if ((nested.kind === "text" || nested.type === "text") && typeof nested.text === "string" && nested.text.trim()) {
@@ -141,47 +150,42 @@ export async function handleDomainMessage(message) {
     }
 
     if (!userText) {
-      return {
-        error: {
-          code: -32000,
-          message: "Could not extract user text from message parts",
-          data: { where: "handleDomainMessage" },
-        },
-      };
-    }
-
-    // Extract domain from the extracted text
-    const domain = extractDomainFromText(userText);
-    if (!domain) {
-      // no domain found — return helpful text (not asking for clarification in code)
       const text = "No domain found in the message. Please provide a domain like 'example.com'.";
       return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
     }
 
-    // Call the whois tool directly (no model streaming)
+    const domain = extractDomainFromText(userText);
+    if (!domain) {
+      const text = "No valid domain detected. Provide a domain like 'example.com'.";
+      return { result: { ok: true, output: { text, artifacts: [{ type: "text/plain", parts: [{ text }] }] } } };
+    }
+
     const toolResult = await checkDomainStatus(domain);
 
-    // If whois tool returned structured output & output field, return as expected envelope
-    if (toolResult && toolResult.output) {
+    if (toolResult?.output) {
       return { result: { ok: true, output: toolResult.output } };
     }
 
-    // If tool returned data, format it
-    if (toolResult && toolResult.data) {
+    if (toolResult?.data) {
       const text = JSON.stringify(toolResult.data, null, 2);
-      return { result: { ok: true, output: { text, artifacts: [{ type: "application/json", parts: [{ json: toolResult.data }] }] } } };
+      return {
+        result: { ok: true, output: { text, artifacts: [{ type: "application/json", parts: [{ json: toolResult.data }] }] } },
+      };
     }
 
-    // fallback — stringify everything
-    return { result: { ok: true, output: { text: JSON.stringify(toolResult, null, 2), artifacts: [{ type: "application/json", parts: [{ json: toolResult }] }] } } };
-  } catch (err) {
+    return {
+      result: {
+        ok: true,
+        output: {
+          text: JSON.stringify(toolResult, null, 2),
+          artifacts: [{ type: "application/json", parts: [{ json: toolResult }] }],
+        },
+      },
+    };
+  } catch (err: any) {
     console.error("❌ 'handleDomainMessage' failed:", err);
     return {
-      error: {
-        code: -32000,
-        message: String(err?.message ?? err),
-        data: { where: "handleDomainMessage" },
-      },
+      error: { code: -32000, message: String(err?.message ?? err), data: { where: "handleDomainMessage" } },
     };
   }
 }
