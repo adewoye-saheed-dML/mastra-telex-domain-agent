@@ -7,11 +7,10 @@ dotenv.config({ path: "./.env" });
 
 export const AGENT_ID = "domain-checker-agent";
 
-const WHOISFREAKS_API_KEY: string = process.env.WHOISFREAKS_API_KEY ?? "";
-const WHOIS_API_KEY: string = WHOISFREAKS_API_KEY;
-const WHOISFREAKS_API_BASE: string = (process.env.WHOISFREAKS_API_BASE ?? "https://api.whoisfreaks.com/v1.0").replace(/\/$/, "");
+const API_NINJAS_KEY: string = process.env.API_NINJAS_KEY ?? "";
+const API_NINJAS_BASE: string = "https://api.api-ninjas.com/v1";
 
-if (!WHOISFREAKS_API_KEY) console.warn("WHOISFREAKS_API_KEY not set. Add it to .env");
+if (!API_NINJAS_KEY) console.warn("API_NINJAS_KEY not set. Add it to .env");
 
 const DomainSchema = z.object({
   domain: z.string().min(3, "Please provide a valid domain name."),
@@ -35,7 +34,7 @@ interface ToolOutput {
 // whois tool
 const whoisTool = {
   name: "check_domain_status",
-  description: "Checks if a domain is registered using the WhoisFreaks API.",
+  description: "Checks if a domain is registered using the API Ninjas WHOIS API.",
   inputSchema: DomainSchema,
   async execute(...args: unknown[]): Promise<any> {
     let domainArg: string | undefined;
@@ -46,10 +45,14 @@ const whoisTool = {
     if (!domainArg) throw new Error("whoisTool: missing domain argument");
 
     const domain = domainArg.trim().toLowerCase();
-    const url = `${WHOISFREAKS_API_BASE}/whois?apikey=${encodeURIComponent(WHOIS_API_KEY)}&domain=${encodeURIComponent(domain)}`;
+    const url = `${API_NINJAS_BASE}/whois?domain=${encodeURIComponent(domain)}`;
 
     try {
-      const resp = await fetch(url, { method: "GET" });
+      const resp = await fetch(url, {
+        method: "GET",
+        headers: { "X-Api-Key": API_NINJAS_KEY },
+      });
+
       const rawText = await resp.text().catch(() => "");
       let json: any = null;
       try {
@@ -59,10 +62,10 @@ const whoisTool = {
       }
 
       const registered =
-        (json && (json.registered === true || json.is_registered === true || json.domainStatus === "registered")) ||
+        (json && (json.is_registered === true || json.domain_status === "registered")) ||
         (typeof rawText === "string" && /registered/i.test(rawText));
 
-      const expires = json?.expires || json?.expiryDate || json?.expiration_date || null;
+      const expires = json?.expiry_date || json?.expires || null;
       const registrar = json?.registrar || null;
 
       const structured: WhoisStructured = {

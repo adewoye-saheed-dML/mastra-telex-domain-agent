@@ -1,11 +1,9 @@
-// server.ts
 import express from "express";
 import type { Request, Response } from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 dotenv.config({ path: "./.env" });
 
-// ✅ FIX: remove ".js" extension for TS (tsc will handle it)
 import { handleDomainMessage, AGENT_ID } from "./domain-agent.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -20,7 +18,7 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
   res.json({
     id: AGENT_ID,
     name: "Domain Checker",
-    description: "Checks domain availability using WhoisFreaks API.",
+    description: "Checks domain availability using API Ninjas WHOIS API.",
     a2a_version: "2.0",
     endpoints: { invoke: invokeUrl },
     skills: ["domain-check"],
@@ -114,10 +112,8 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
     if (agentReply?.jsonrpc) return res.json(agentReply);
     if (agentReply?.result) {
-      // ✅ Send normal response
       res.json(buildJsonRpcResult(id, agentReply.result));
 
-      // ✅ Also push to Telex UI if config is present
       const pushCfg = req.body?.params?.configuration?.pushNotificationConfig;
       if (pushCfg?.url && pushCfg?.token) {
         await postToPushUrl(
@@ -143,8 +139,6 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
     if (typeof agentReply === "string") {
       const payload = buildJsonRpcResult(id, { ok: true, output: { text: agentReply } });
       res.json(payload);
-
-      // ✅ Also push plain string result to Telex UI
       const pushCfg = req.body?.params?.configuration?.pushNotificationConfig;
       if (pushCfg?.url && pushCfg?.token)
         await postToPushUrl(pushCfg.url, { text: agentReply }, pushCfg.token);
@@ -157,14 +151,12 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
     });
     res.json(payload);
 
-    // ✅ Fallback push for unstructured object replies
     const pushCfg = req.body?.params?.configuration?.pushNotificationConfig;
     if (pushCfg?.url && pushCfg?.token)
       await postToPushUrl(pushCfg.url, { text: payload.result.output.text }, pushCfg.token);
   } catch (err: any) {
     return res.status(500).json(buildJsonRpcError(id, -32000, String(err?.message ?? err)));
   }
-
 });
 
 app.listen(PORT, () => {
