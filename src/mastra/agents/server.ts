@@ -6,7 +6,7 @@ import fetch from "node-fetch";
 dotenv.config({ path: "./.env" });
 
 // ✅ FIX: remove ".js" extension for TS (tsc will handle it)
-import { handleDomainMessage, AGENT_ID } from "./domain-agent";
+import { handleDomainMessage, AGENT_ID } from "./domain-agent.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const A2A_BASE = (process.env.MASTRA_A2A_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
