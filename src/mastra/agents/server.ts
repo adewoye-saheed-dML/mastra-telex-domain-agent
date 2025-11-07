@@ -1,10 +1,11 @@
+// server.ts
 import express from "express";
 import type { Request, Response } from "express";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 dotenv.config({ path: "./.env" });
 
-import { handleDomainMessage, AGENT_ID } from "./domain-agent.js";
+import { handleDomainMessage, AGENT_ID } from "./agents/domain-agent.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const A2A_BASE = (process.env.MASTRA_A2A_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -25,8 +26,6 @@ app.get(`/a2a/agent/${AGENT_ID}/.well-known/agent.json`, (_req: Request, res: Re
     contact: "",
   });
 });
-
-// ❌ REMOVED: extractUserText function is the source of the problem.
 
 function buildJsonRpcResult(idValue: any, resultObj: any) { return { jsonrpc: "2.0", id: idValue ?? null, result: resultObj }; }
 function buildJsonRpcError(idValue: any, code: number, message: string, data?: any) { return { jsonrpc: "2.0", id: idValue ?? null, error: { code, message, data } }; }
@@ -51,11 +50,9 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
   const jsonrpcVersion = req.body?.jsonrpc ?? "2.0";
   const id = req.body?.id ?? null;
 
-  // ✅ FIX: Get the *entire* message object from the request.
-  // This is what the agent actually wants, not just the text.
+  // Get the *entire* message object from the request.
   const message = req.body?.params?.message ?? req.body?.message ?? null;
 
-  // ✅ FIX: Basic validation
   if (!message || !message.parts || !Array.isArray(message.parts)) {
     console.error("[A2A] Invalid or missing message object in request body.");
     const errPayload = buildJsonRpcError(id, -32602, "Invalid params: 'message' object is missing or invalid.");
@@ -75,7 +72,6 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
     (async () => {
       try {
-        // ✅ FIX: Pass the full message object
         const agentReply = await handleDomainMessage(message);
 
         if (agentReply?.jsonrpc && (agentReply?.result || agentReply?.error)) { await postToPushUrl(pushUrl, agentReply, pushToken); return; }
@@ -95,7 +91,6 @@ app.post(`/a2a/agent/${AGENT_ID}`, async (req: Request, res: Response) => {
 
   // SYNC
   try {
-    // ✅ FIX: Pass the full message object
     const agentReply = await handleDomainMessage(message);
 
     if (agentReply?.jsonrpc) return res.json(agentReply);
