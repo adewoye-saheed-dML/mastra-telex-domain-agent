@@ -1,4 +1,3 @@
-// src/mastra/workflows/domain-workflow.ts
 import { Workflow } from "@mastra/core";
 import { z } from "zod";
 
@@ -49,11 +48,39 @@ const domainWorkflowConfig = {
     {
       id: "domain-checker-agent",
       name: "Domain Agent Node",
-      parameters: {},
+      // ✅ FIX 1: Pass the workflow input to the agent in the format
+      // that server.ts's 'extractUserText' function expects.
+      parameters: {
+        message: {
+          role: "user",
+          parts: [
+            {
+              text: "{{ inputs.text }}",
+            },
+          ],
+        },
+      },
       position: [800, -100],
       type: "a2a/mastra-a2a-node",
       typeVersion: 1,
       url: agentInvokeUrl,
+    },
+    // ✅ FIX 2: Add a workflow output node to map the agent's
+    // result to the workflow's 'outputSchema'
+    {
+      id: "workflow-output-node",
+      name: "Workflow Output",
+      type: "workflow-output-node",
+      typeVersion: 1,
+      position: [1200, -100],
+      parameters: {
+        outputs: {
+          // Map the 'reply' field from our outputSchema
+          // to the text response from the A2A node.
+          reply:
+            "{{ nodes['domain-checker-agent'].result.output.text | default: 'Error mapping agent response.' }}",
+        },
+      },
     },
   ],
   pinData: {},
